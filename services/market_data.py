@@ -5,6 +5,52 @@ import time
 
 import requests
 
+
+# ── Multi-period change calculation ─────────────────────────────────────────────
+
+def _compute_changes(closes) -> dict:
+    """Compute 1D / 1W / 1M / 1Y % changes from a sorted daily close pandas Series.
+
+    For each lookback period, finds the last available close on or before
+    (latest_date - N calendar days), satisfying the requirement that weekends /
+    holidays use the nearest prior trading session.
+
+    Returns change_1d, change_1w, change_1mo, change_1y as rounded floats or None.
+    """
+    empty = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
+    if len(closes) < 2:
+        return empty
+
+    current = float(closes.iloc[-1])
+
+    # Normalise index to UTC-aware DatetimeIndex for calendar arithmetic
+    idx = closes.index
+    try:
+        utc_idx = idx.tz_convert("UTC")
+    except TypeError:
+        utc_idx = idx.tz_localize("UTC")
+
+    latest = utc_idx[-1]
+
+    def _ref_close(days_back: int):
+        target = latest - timedelta(days=days_back)
+        positions = (utc_idx <= target).nonzero()[0]
+        if not len(positions):
+            return None
+        return float(closes.iloc[positions[-1]])
+
+    def _pct(ref):
+        if ref is None or ref == 0:
+            return None
+        return round((current - ref) / ref * 100, 3)
+
+    return {
+        "change_1d":  _pct(float(closes.iloc[-2])),  # previous session close
+        "change_1w":  _pct(_ref_close(7)),
+        "change_1mo": _pct(_ref_close(30)),
+        "change_1y":  _pct(_ref_close(365)),
+    }
+
 try:
     import yfinance as yf
     YFINANCE_AVAILABLE = True
@@ -29,17 +75,18 @@ def fetch_bitcoin():
         params={"ids": "bitcoin", "vs_currencies": "usd"},
     )
     price = float(data["bitcoin"]["usd"])
-    # Use yfinance previous daily close as comparison basis — consistent with all other instruments
     prev_price = None
+    changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
     if YFINANCE_AVAILABLE:
         try:
-            hist = yf.Ticker("BTC-USD").history(period="5d", interval="1d")
+            hist = yf.Ticker("BTC-USD").history(period="1y", interval="1d")
             closes = hist["Close"].dropna()
             if len(closes) >= 2:
                 prev_price = float(closes.iloc[-2])
+                changes = _compute_changes(closes)
         except Exception:
             pass
-    return price, prev_price
+    return price, prev_price, changes
 
 
 def fetch_ethereum():
@@ -49,42 +96,49 @@ def fetch_ethereum():
     )
     price = float(data["ethereum"]["usd"])
     prev_price = None
+    changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
     if YFINANCE_AVAILABLE:
         try:
-            hist = yf.Ticker("ETH-USD").history(period="5d", interval="1d")
+            hist = yf.Ticker("ETH-USD").history(period="1y", interval="1d")
             closes = hist["Close"].dropna()
             if len(closes) >= 2:
                 prev_price = float(closes.iloc[-2])
+                changes = _compute_changes(closes)
         except Exception:
             pass
-    return price, prev_price
+    return price, prev_price, changes
 
 
 def fetch_eurusd():
     data = _get("https://api.frankfurter.app/latest", params={"from": "EUR", "to": "USD"})
     price = float(data["rates"]["USD"])
     prev_price = None
+    changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
     if YFINANCE_AVAILABLE:
         try:
-            hist = yf.Ticker("EURUSD=X").history(period="5d", interval="1d")
+            hist = yf.Ticker("EURUSD=X").history(period="1y", interval="1d")
             closes = hist["Close"].dropna()
             if len(closes) >= 2:
                 prev_price = float(closes.iloc[-2])
+                changes = _compute_changes(closes)
         except Exception:
             pass
-    return price, prev_price
+    return price, prev_price, changes
 
 
 def fetch_yf(ticker: str) -> tuple:
     if not YFINANCE_AVAILABLE:
         raise RuntimeError("yfinance not installed — run: pip install yfinance")
-    hist = yf.Ticker(ticker).history(period="5d", interval="1d")
+    hist = yf.Ticker(ticker).history(period="1y", interval="1d")
     if hist.empty:
         raise ValueError(f"No data returned for {ticker}")
     closes = hist["Close"].dropna()
+    if len(closes) < 1:
+        raise ValueError(f"No close prices for {ticker}")
     price = float(closes.iloc[-1])
     prev_price = float(closes.iloc[-2]) if len(closes) >= 2 else None
-    return price, prev_price
+    changes = _compute_changes(closes)
+    return price, prev_price, changes
 
 
 # ── History fetchers (range-aware) ──────────────────────────────────────────────

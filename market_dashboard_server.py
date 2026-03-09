@@ -42,6 +42,10 @@ def api_prices():
             result.append({
                 "key": inst["key"], "label": inst["label"],
                 "price": d.get("price"), "prev_price": d.get("prev_price"),
+                "change_1d":  d.get("change_1d"),
+                "change_1w":  d.get("change_1w"),
+                "change_1mo": d.get("change_1mo"),
+                "change_1y":  d.get("change_1y"),
                 "error": d.get("error"),
                 "prefix": inst["prefix"], "suffix": inst["suffix"],
                 "decimals": inst["decimals"], "thousands": inst["thousands"],

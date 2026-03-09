@@ -120,15 +120,49 @@ function _isSectionOpen(id, defaultOpen) {
   return _sectionOpenState.hasOwnProperty(id) ? _sectionOpenState[id] : defaultOpen;
 }
 
-/* ── Price card state ──────────────────────────────────────────────────────── */
+/* ── Price card state & range mode ────────────────────────────────────────── */
 let instruments = [];
 const _cardElements = {};
 
+// Active range for card % change display and movers ranking
+let _marketsRangeMode = '1d';
+
+// Return the change value for an instrument at the current range mode
+function _instChg(inst, mode) {
+  mode = mode || _marketsRangeMode;
+  const v = inst['change_' + mode];
+  return (v !== undefined && v !== null) ? v : null;
+}
+
+// Update the change label element for one instrument card
+function updateCardChange(inst) {
+  const cEl = document.getElementById('c-' + inst.key);
+  if (!cEl) return;
+  const chg = _instChg(inst);
+  if (chg === null) {
+    cEl.innerHTML = '<span class="neu">\u2014</span>';
+  } else if (chg > 0) {
+    cEl.innerHTML = '<span class="up">\u25b2</span><span class="up">+' + chg.toFixed(2) + '%</span>';
+  } else {
+    cEl.innerHTML = '<span class="down">\u25bc</span><span class="down">' + chg.toFixed(2) + '%</span>';
+  }
+}
+
+// Change the active range and immediately refresh all change displays
+function setMarketsRange(mode) {
+  _marketsRangeMode = mode;
+  document.querySelectorAll('.chg-tab').forEach(t => t.classList.remove('active'));
+  const tab = document.getElementById('chg-tab-' + mode);
+  if (tab) tab.classList.add('active');
+  instruments.forEach(updateCardChange);
+  _rebuildMovers();
+}
+
 const INSTRUMENT_GROUPS = [
-  { label: 'Crypto',  keys: ['bitcoin', 'ethereum'] },
-  { label: 'Metals',  keys: ['gold', 'silver', 'copper', 'platinum'] },
-  { label: 'Energy',  keys: ['brent', 'wti', 'henryhub', 'ttfgas'] },
+  { label: 'Energy',  keys: ['brent', 'wti', 'henryhub', 'ttfgas', 'rbobgas', 'heatingoil'] },
+  { label: 'Metals',  keys: ['gold', 'silver', 'copper', 'platinum', 'aluminium', 'palladium'] },
   { label: 'FX',      keys: ['eurusd', 'gbpusd', 'usdjpy', 'usdcnh'] },
+  { label: 'Crypto',  keys: ['bitcoin', 'ethereum'] },
 ];
 let pricesSortMode = 'grouped';
 
@@ -157,39 +191,24 @@ function renderCards(data) {
   // Place cards in the grid (grouped or sorted)
   renderPricesGrid();
 
-  // Update price and change text on all cards now in DOM
+  // Update price and change labels on all cards
   data.forEach(inst => {
     const pEl = document.getElementById('p-' + inst.key);
-    const cEl = document.getElementById('c-' + inst.key);
     if (!pEl) return;
 
     if (!inst.price && inst.error) {
       pEl.className = 'card-price err';
       pEl.textContent = 'Unavailable';
-      cEl.innerHTML = '<span class="neu" style="font-size:0.6rem">' + esc(inst.error.substring(0, 45)) + '</span>';
+      const cEl = document.getElementById('c-' + inst.key);
+      if (cEl) cEl.innerHTML = '<span class="neu" style="font-size:0.6rem">' + esc(inst.error.substring(0, 45)) + '</span>';
       return;
     }
     pEl.className = 'card-price';
     pEl.textContent = fmtPrice(inst);
-
-    const chg = calcChg(inst);
-    if (chg === null) {
-      cEl.innerHTML = '<span class="neu">\u2014</span>';
-    } else if (chg > 0) {
-      cEl.innerHTML = '<span class="up">\u25b2</span><span class="up">+' + chg.toFixed(2) + '%</span>';
-    } else {
-      cEl.innerHTML = '<span class="down">\u25bc</span><span class="down">' + chg.toFixed(2) + '%</span>';
-    }
+    updateCardChange(inst);
   });
 
-  if (_moversData) {
-    _moversData = [...data].sort((a, b) => {
-      const pa = a.price != null && a.prev_price ? Math.abs((a.price - a.prev_price) / a.prev_price) : -1;
-      const pb = b.price != null && b.prev_price ? Math.abs((b.price - b.prev_price) / b.prev_price) : -1;
-      return pb - pa;
-    });
-    renderMoversPreview();
-  }
+  _rebuildMovers();
   renderPulse();
 }
 
@@ -218,18 +237,16 @@ function renderPricesGrid() {
     let sorted = [...instruments];
     if (pricesSortMode === 'gainers') {
       sorted.sort((a, b) => {
-        const pa = a.price != null && a.prev_price ? (a.price - a.prev_price) / a.prev_price : -999;
-        const pb = b.price != null && b.prev_price ? (b.price - b.prev_price) / b.prev_price : -999;
+        const pa = _instChg(a) ?? -999;
+        const pb = _instChg(b) ?? -999;
         return pb - pa;
       });
     } else if (pricesSortMode === 'losers') {
       sorted.sort((a, b) => {
-        const pa = a.price != null && a.prev_price ? (a.price - a.prev_price) / a.prev_price : 999;
-        const pb = b.price != null && b.prev_price ? (b.price - b.prev_price) / b.prev_price : 999;
+        const pa = _instChg(a) ?? 999;
+        const pb = _instChg(b) ?? 999;
         return pa - pb;
       });
-    } else if (pricesSortMode === 'alpha') {
-      sorted.sort((a, b) => a.label.localeCompare(b.label));
     }
     sorted.forEach(inst => {
       if (!_settings.hiddenInstruments.includes(inst.key) && _cardElements[inst.key])
@@ -277,14 +294,30 @@ let _moversData  = null;
 let _newsData    = null;
 let _driversData = null;
 
-async function loadBriefingData() {
-  const priceRes = await fetch('/api/prices').then(r => r.json()).catch(() => []);
-  _moversData = [...priceRes].sort((a, b) => {
-    const pa = a.price != null && a.prev_price ? Math.abs((a.price - a.prev_price) / a.prev_price) : -1;
-    const pb = b.price != null && b.prev_price ? Math.abs((b.price - b.prev_price) / b.prev_price) : -1;
+// Sort instruments by absolute change for the current range mode and re-render movers
+function _rebuildMovers() {
+  if (!instruments.length) return;
+  _moversData = [...instruments].sort((a, b) => {
+    const pa = Math.abs(_instChg(a) ?? -1);
+    const pb = Math.abs(_instChg(b) ?? -1);
     return pb - pa;
   });
   renderMoversPreview();
+}
+
+async function loadBriefingData() {
+  // Seed _moversData from prices if instruments not yet loaded
+  if (!instruments.length) {
+    const priceRes = await fetch('/api/prices').then(r => r.json()).catch(() => []);
+    _moversData = [...priceRes].sort((a, b) => {
+      const pa = Math.abs(a.change_1d ?? -1);
+      const pb = Math.abs(b.change_1d ?? -1);
+      return pb - pa;
+    });
+    renderMoversPreview();
+  } else {
+    _rebuildMovers();
+  }
 
   const [news, drivers] = await Promise.all([
     fetch('/api/home/news').then(r => r.json()).catch(() => []),
@@ -296,6 +329,7 @@ async function loadBriefingData() {
   renderDriversPreview();
   renderNewsPage();
   renderMacroPage();
+  renderSignalsBanner();
 }
 loadBriefingData();
 
@@ -306,7 +340,7 @@ function renderMoversPreview() {
   const top = _moversData.filter(r => r.price != null).slice(0, 5);
   if (!top.length) { el.innerHTML = '<span style="color:var(--dim)">No data yet</span>'; return; }
   el.innerHTML = '<div>' + top.map(r => {
-    const pct = r.price != null && r.prev_price ? (r.price - r.prev_price) / r.prev_price * 100 : null;
+    const pct = _instChg(r);
     const { html } = fmtPct(pct);
     return `<div class="mover-row">
       <span class="mover-name">${esc(r.label)}</span>
@@ -331,15 +365,55 @@ function renderDriversPreview() {
     top.map(d => `<li title="${esc(d.title)}">${esc(d.title)}</li>`).join('') + '</ul>';
 }
 
+/* ── Home page: Market Signals banner ─────────────────────────────────────── */
+const _SIGNAL_FILTERS = [
+  { label: 'Energy',          accent: '#10b981', re: /\boil\b|opec|brent|wti|crude|\bgas\b|lng|\benergy\b|fuel|refinery/i },
+  { label: 'Monetary Policy', accent: '#3b82f6', re: /fed\b|federal reserve|ecb|boj|central bank|\brate\b|inflation|hawkish|dovish|liquidity/i },
+  { label: 'China & Demand',  accent: '#8b5cf6', re: /china|pboc|yuan|copper|\bdemand\b|emerging market|india|manufacturing pmi/i },
+];
+
+function renderSignalsBanner() {
+  const el = document.getElementById('signals-strip');
+  if (!el) return;
+  const drivers = _driversData || [];
+  if (!drivers.length) return;
+
+  const used = new Set();
+  const signals = _SIGNAL_FILTERS.map(f => {
+    const match = drivers.find(d => !used.has(d) && f.re.test(d.title || ''));
+    if (match) used.add(match);
+    return match || null;
+  });
+
+  // Fill empty slots with first unclaimed driver
+  const fallbacks = drivers.filter(d => !used.has(d));
+  signals.forEach((s, i) => {
+    if (!s && fallbacks.length) signals[i] = fallbacks.shift();
+  });
+
+  el.innerHTML = signals.map((d, i) => {
+    if (!d) return '';
+    const f   = _SIGNAL_FILTERS[i];
+    const meta = [d.source, d.published].filter(Boolean).join(' · ');
+    return `<div class="signal-card" style="--signal-accent:${f.accent}">
+      <div class="signal-theme">${f.label}</div>
+      <div class="signal-headline">${esc(d.title)}</div>
+      ${meta ? `<div class="signal-meta">${esc(meta)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
 /* ── Full-page News renderer (sectioned by asset class) ────────────────────── */
 const _NEWS_SECTION_MAP = {
-  'Bitcoin':       'Crypto',  'Ethereum':      'Crypto',
-  'Gold':          'Metals',  'Silver':        'Metals',
-  'Copper':        'Metals',  'Platinum':      'Metals',
-  'Brent Crude':   'Energy',  'WTI Crude':     'Energy',
-  'Henry Hub Gas': 'Energy',  'TTF Gas':       'Energy',
-  'EUR / USD':     'FX',      'GBP / USD':     'FX',
-  'USD / JPY':     'FX',      'USD / CNH':     'FX',
+  'Bitcoin':        'Crypto',  'Ethereum':       'Crypto',
+  'Gold':           'Metals',  'Silver':         'Metals',
+  'Copper':         'Metals',  'Platinum':       'Metals',
+  'Aluminium':      'Metals',  'Palladium':      'Metals',
+  'Brent Crude':    'Energy',  'WTI Crude':      'Energy',
+  'Henry Hub Gas':  'Energy',  'TTF Gas':        'Energy',
+  'RBOB Gasoline':  'Energy',  'Heating Oil':    'Energy',
+  'EUR / USD':      'FX',      'GBP / USD':      'FX',
+  'USD / JPY':      'FX',      'USD / CNH':      'FX',
 };
 const _NEWS_SECTION_ORDER  = ['Energy', 'Metals', 'Crypto', 'FX', 'General'];
 const _NEWS_SECTION_ACCENTS = {
@@ -347,87 +421,146 @@ const _NEWS_SECTION_ACCENTS = {
   'Crypto': '#8b5cf6', 'FX':     '#3b82f6',
 };
 
+/* ── News column dashboard ─────────────────────────────────────────────────── */
+// Column config — 'General' articles are merged into 'FX & Markets'
+const _NEWS_COLS = [
+  { key: 'Energy', label: 'Energy',        icon: '&#9679;' },
+  { key: 'Metals', label: 'Metals',        icon: '&#9671;' },
+  { key: 'Crypto', label: 'Crypto',        icon: '&#x20BF;' },
+  { key: 'FX',     label: 'FX &amp; Markets', icon: '&#36;' },
+];
+
+// Persist open/closed state per column; default all open
+const _newsColOpen = {};
+function _isNewsColOpen(key) {
+  return _newsColOpen[key] !== false;
+}
+function toggleNewsCol(key) {
+  _newsColOpen[key] = !_isNewsColOpen(key);
+  renderNewsPage();
+}
+
 function renderNewsPage() {
   const el = document.getElementById('news-page-body');
   if (!el) return;
   if (!_newsData || !_newsData.length) {
-    el.innerHTML = '<p style="color:var(--muted);padding:16px 0">No articles available.</p>';
+    el.innerHTML = '<p style="color:var(--muted);padding:24px 0">No articles available.</p>';
     return;
   }
+
+  // Group articles by section
   const grouped = {};
   _NEWS_SECTION_ORDER.forEach(s => { grouped[s] = []; });
   _newsData.forEach(a => {
     const section = _NEWS_SECTION_MAP[a.instrument] || 'General';
-    grouped[section].push(a);
+    if (grouped[section]) grouped[section].push(a);
+    else grouped['General'].push(a);
   });
-  let html = '';
-  let isFirst = true;
-  _NEWS_SECTION_ORDER.forEach(section => {
-    const articles = grouped[section];
-    if (!articles.length) return;
-    const accent  = _NEWS_SECTION_ACCENTS[section] || '';
-    const sid     = 'news:' + section;
-    const isOpen  = _isSectionOpen(sid, isFirst);
-    const accentS = accent ? ` style="--section-accent:${accent}"` : '';
-    html += `<div class="collapsible${isOpen ? ' open' : ''}" data-sid="${sid}"${accentS}>`;
-    html += `<div class="collapsible-header" onclick="toggleSection(this)">
-      <span class="collapsible-title">${esc(section)}</span>
-      <span class="collapsible-chevron">&#8250;</span>
+  // Merge 'General' into FX column
+  grouped['FX'] = [...(grouped['FX'] || []), ...(grouped['General'] || [])];
+
+  let html = '<div class="news-dashboard">';
+
+  _NEWS_COLS.forEach(col => {
+    const articles = (grouped[col.key] || []).slice(0, 6);
+    const accent   = _NEWS_SECTION_ACCENTS[col.key] || '#3b82f6';
+    const isOpen   = _isNewsColOpen(col.key);
+    const lead     = articles[0];
+    const preview  = lead ? esc(lead.title) : 'No articles';
+
+    html += `<div class="news-col${isOpen ? ' open' : ''}" style="--section-accent:${accent}">`;
+
+    // ── Column header (always visible, clickable) ──
+    html += `<div class="news-col-header" onclick="toggleNewsCol('${col.key}')">
+      <div class="news-col-accent-bar"></div>
+      <div class="news-col-header-row">
+        <span class="news-col-title">${col.label}</span>
+        <div class="news-col-header-right">
+          ${articles.length ? `<span class="news-col-count">${articles.length}</span>` : ''}
+          <span class="news-col-chevron">&#8250;</span>
+        </div>
+      </div>
+      <div class="news-col-preview">${preview}</div>
     </div>`;
-    html += `<div class="collapsible-body">`;
 
-    // Lead card — first article gets editorial prominence
-    const lead = articles[0];
-    const leadMeta = [lead.instrument, lead.publisher, lead.published].filter(Boolean).join(' · ');
-    html += `<a class="lead-card" href="${esc(lead.url)}" target="_blank" rel="noopener">
-      <div class="lead-card-headline">${esc(lead.title)}</div>
-      <div class="lead-card-meta">${esc(leadMeta)}</div>
-    </a>`;
+    // ── Column body (articles — shown when open) ──
+    if (articles.length) {
+      html += `<div class="news-col-body">`;
 
-    // Supporting headlines — remaining articles as compact rows
-    if (articles.length > 1) {
-      html += `<div class="news-feed"${accentS}>`;
-      articles.slice(1).forEach(a => {
-        const meta = [a.instrument, a.publisher, a.published].filter(Boolean).join(' · ');
-        html += `<a class="news-feed-row" href="${esc(a.url)}" target="_blank" rel="noopener">
-          <div class="news-feed-headline">${esc(a.title)}</div>
-          <div class="news-feed-meta">${esc(meta)}</div>
-        </a>`;
-      });
-      html += '</div>';
+      // Lead article
+      const leadMeta = [lead.publisher, lead.published].filter(Boolean).join(' · ');
+      html += `<div class="news-lead-label">Featured</div>`;
+      html += `<a class="lead-card" href="${esc(lead.url)}" target="_blank" rel="noopener">
+        <div class="lead-card-headline">${esc(lead.title)}</div>
+        ${lead.summary ? `<div class="lead-card-summary">${esc(lead.summary)}</div>` : ''}
+        <div class="lead-card-meta">${esc(leadMeta)}</div>
+      </a>`;
+
+      // Supporting headlines
+      if (articles.length > 1) {
+        html += `<div class="news-feed-label">More Headlines</div>`;
+        html += `<div class="news-feed">`;
+        articles.slice(1).forEach(a => {
+          const meta = [a.publisher, a.published].filter(Boolean).join(' · ');
+          html += `<a class="news-feed-row" href="${esc(a.url)}" target="_blank" rel="noopener">
+            <div class="news-feed-headline">${esc(a.title)}</div>
+            <div class="news-feed-meta">${esc(meta)}</div>
+          </a>`;
+        });
+        html += '</div>';
+      }
+
+      html += '</div>';  // .news-col-body
     }
 
-    html += '</div></div>';
-    isFirst = false;
+    html += '</div>';  // .news-col
   });
+
+  html += '</div>';  // .news-dashboard
   el.innerHTML = html;
+}
+
+/* ── Macro theme accordion ─────────────────────────────────────────────────── */
+// Short tagline shown on the card face (below the title)
+const MACRO_THEME_TAGLINES = [
+  'Fed · ECB · BoJ rate cycles · Dollar strength · Commodity valuations',
+  'OPEC+ · LNG flows · Inventory levels · Refinery margins',
+  'Tariffs · Sanctions · Supply chain disruption · Shipping routes',
+  'PBoC policy · Property sector · Manufacturing PMI · Import volumes',
+];
+
+let _activeMacroTheme = -1;  // -1 = all collapsed (default)
+
+function openMacroTheme(i) {
+  _activeMacroTheme = (_activeMacroTheme === i) ? -1 : i;  // toggle; -1 = all closed
+  renderMacroPage();
 }
 
 /* ── Full-page Macro renderer (themed blocks + keyword-matched headlines) ───── */
 const MACRO_THEMES = [
   {
-    title: 'Monetary Policy &amp; Rates',
+    title: 'Monetary Policy &amp; Liquidity',
     accent: '#3b82f6',
-    keywords: /fed|federal reserve|\brate\b|inflation|ecb|boj|central bank|interest rate|hawkish|dovish|rate cut|rate hike/i,
-    text: 'Fed, ECB, and BoJ rate trajectories are the primary driver of dollar strength, risk appetite, and commodity valuations. Divergence between cutting cycles determines capital flows into metals, energy, and EM assets.',
+    keywords: /fed|federal reserve|ecb|boj|central bank|\brate\b|interest rate|inflation|liquidity|hawkish|dovish|rate cut|rate hike|quantitative/i,
+    text: 'Central bank rate cycles set the cost of capital globally. Tight policy strengthens the dollar and pressures commodity prices denominated in USD; easing cycles reduce carry costs and fuel demand for hard assets and risk-on positioning. Fed-ECB-BoJ divergence is the primary driver of currency-adjusted commodity returns.',
   },
   {
-    title: 'Energy &amp; Transition',
+    title: 'Energy &amp; Physical Supply',
     accent: '#10b981',
-    keywords: /\boil\b|gas|lng|opec|crude|brent|wti|pipeline|\benergy\b|renewable|solar|wind|carbon|climate|fuel price/i,
-    text: 'Oil demand growth is narrowing to emerging markets as developed-world consumption peaks. Post-2022 LNG trade flows are rebalancing, while accelerating renewables buildout is reshaping long-run commodity demand.',
+    keywords: /\boil\b|opec|crude|brent|wti|\bgas\b|lng|pipeline|supply|inventory|\benergy\b|fuel price|refinery|barrel|heating oil/i,
+    text: 'Energy prices feed directly into inflation, transportation costs, and industrial input costs globally. OPEC+ production decisions and infrastructure disruptions ripple across asset classes — from metals processing costs to FX reserves of producer nations. Inventory levels and spare capacity are the key real-time signals.',
   },
   {
-    title: 'Geopolitics &amp; Trade',
+    title: 'Geopolitics &amp; Trade Flows',
     accent: '#f59e0b',
-    keywords: /tariff|trade war|sanction|russia|ukraine|middle east|iran|israel|geopolit|nato|conflict|supply chain|export ban|import ban/i,
-    text: 'US-China tariff escalation, Western sanctions on Russia, and Middle East supply risk are reshaping global commodity flows. Supply chain fragmentation creates persistent pricing dislocations across metals and energy.',
+    keywords: /tariff|trade war|sanction|ukraine|middle east|iran|israel|conflict|geopolit|nato|supply chain|export ban|import ban|embargo|shipping|strait/i,
+    text: 'Trade restrictions and geopolitical conflict reshape commodity routing, introduce supply shocks, and embed risk premiums into prices. Sanctions on energy exporters and tariff escalations create persistent pricing dislocations. Shipping route disruptions — particularly through strategic chokepoints — are a leading indicator of commodity price spikes.',
   },
   {
-    title: 'China &amp; Emerging Markets',
+    title: 'China &amp; Global Demand',
     accent: '#8b5cf6',
-    keywords: /china|pboc|chinese|yuan|renminbi|emerging market|india|brazil|copper demand|property sector|beijing|shanghai/i,
-    text: 'China remains the single largest swing factor in global commodity demand. PBoC policy response to property sector stress and deflationary pressure directly drives copper, oil, and metals import volumes.',
+    keywords: /china|pboc|chinese|yuan|renminbi|copper demand|emerging market|india|brazil|\bdemand\b|stimulus|property sector|beijing|manufacturing pmi|factory output/i,
+    text: 'China is the world\'s largest consumer of industrial metals, energy, and agricultural commodities. PBOC policy shifts, property sector health, and factory output data are the primary leading indicators for global commodity demand. Weakness in Chinese manufacturing directly moves copper, iron ore, and crude import volumes.',
   },
 ];
 
@@ -454,49 +587,64 @@ function renderMacroPage() {
   // Unclaimed articles as fallback pool
   const unclaimed = drivers.filter(d => !used.has(d));
 
-  let html = '';
-  let isFirst = true;
+  let html = '<div class="macro-theme-list">';
+
   MACRO_THEMES.forEach((theme, i) => {
     let headlines = themeMatches[i];
     if (!headlines.length && unclaimed.length) {
       headlines = unclaimed.splice(0, 2);
     }
-    const sid    = 'macro:' + i;
-    const isOpen = _isSectionOpen(sid, isFirst);
-    html += `<div class="collapsible collapsible-macro${isOpen ? ' open' : ''}" data-sid="${sid}" style="--theme-accent:${theme.accent}">`;
-    html += `<div class="collapsible-header" onclick="toggleSection(this)">
-      <span class="collapsible-title">${theme.title}</span>
-      <span class="collapsible-chevron">&#8250;</span>
+    const isOpen = _activeMacroTheme === i;
+
+    // ── Theme row (compact clickable header) ──
+    html += `<div class="macro-theme-wrap" style="--theme-accent:${theme.accent}">`;
+    html += `<div class="macro-row-header${isOpen ? ' active' : ''}" onclick="openMacroTheme(${i})">
+      <div class="macro-row-stripe"></div>
+      <div class="macro-row-info">
+        <span class="macro-row-title">${theme.title}</span>
+        <span class="macro-row-tagline">${MACRO_THEME_TAGLINES[i]}</span>
+      </div>
+      <span class="macro-row-chevron">&#8250;</span>
     </div>`;
-    html += '<div class="collapsible-body">';
-    html += `<div class="macro-block" style="--theme-accent:${theme.accent}">
-      <div class="macro-block-text">${theme.text}</div>`;
-    if (headlines.length) {
-      html += '<div class="macro-block-headlines">';
 
-      // Featured headline — first match gets lead card prominence
-      const featured = headlines[0];
-      const featMeta = [featured.source, featured.published].filter(Boolean).join(' · ');
-      html += `<a class="lead-card" href="${esc(featured.url)}" target="_blank" rel="noopener">
-        <div class="lead-card-headline">${esc(featured.title)}</div>
-        ${featMeta ? `<div class="lead-card-meta">${esc(featMeta)}</div>` : ''}
-      </a>`;
+    // ── Expanded body ──
+    if (isOpen) {
+      html += `<div class="macro-theme-body">`;
+      html += `<div class="macro-editorial-label">Context</div>`;
+      html += `<div class="macro-block-text">${theme.text}</div>`;
 
-      // Supporting headlines — remaining as compact rows
-      headlines.slice(1).forEach(d => {
-        const meta = [d.source, d.published].filter(Boolean).join(' · ');
-        html += `<a class="macro-headline-row" href="${esc(d.url)}" target="_blank" rel="noopener">
-          <span class="macro-headline-text">${esc(d.title)}</span>
-          ${meta ? `<span class="macro-headline-meta">${esc(meta)}</span>` : ''}
+      if (headlines.length) {
+        // Featured headline
+        const featured = headlines[0];
+        const featMeta = [featured.source, featured.published].filter(Boolean).join(' · ');
+        html += `<div class="macro-key-dev-label">Key Development</div>`;
+        html += `<a class="lead-card" href="${esc(featured.url)}" target="_blank" rel="noopener">
+          <div class="lead-card-headline">${esc(featured.title)}</div>
+          ${featMeta ? `<div class="lead-card-meta">${esc(featMeta)}</div>` : ''}
         </a>`;
-      });
 
-      html += '</div>';
+        // Supporting headlines
+        if (headlines.length > 1) {
+          html += `<div class="macro-signals-label">Signals</div>`;
+          headlines.slice(1).forEach(d => {
+            const meta = [d.source, d.published].filter(Boolean).join(' · ');
+            html += `<a class="macro-headline-row" href="${esc(d.url)}" target="_blank" rel="noopener">
+              <span class="macro-headline-text">${esc(d.title)}</span>
+              ${meta ? `<span class="macro-headline-meta">${esc(meta)}</span>` : ''}
+            </a>`;
+          });
+        }
+      } else {
+        html += `<p class="macro-no-headlines">No matching headlines available.</p>`;
+      }
+
+      html += `</div>`;  // .macro-theme-body
     }
-    html += '</div>';  // .macro-block
-    html += '</div></div>';  // .collapsible-body + .collapsible
-    isFirst = false;
+
+    html += `</div>`;  // .macro-theme-wrap
   });
+
+  html += '</div>';  // .macro-theme-list
   el.innerHTML = html;
 }
 
@@ -535,7 +683,7 @@ document.getElementById('briefing-overlay').addEventListener('click', e => {
 function buildMoversModal() {
   if (!_moversData || !_moversData.length) return '<p style="color:var(--muted)">No data available.</p>';
   const rows = _moversData.map((r, i) => {
-    const pct = r.price != null && r.prev_price ? (r.price - r.prev_price) / r.prev_price * 100 : null;
+    const pct = _instChg(r);
     const { html, cls } = fmtPct(pct);
     return `<tr>
       <td class="col-rank">${i + 1}</td>
@@ -604,7 +752,7 @@ async function openCommodityModal(key) {
   document.getElementById('m-name').textContent  = inst.label;
   document.getElementById('m-price').textContent = fmtPrice(inst);
 
-  const chg = calcChg(inst);
+  const chg = _instChg(inst, currentRange);
   const chgEl = document.getElementById('m-chg');
   if (chg === null) {
     chgEl.textContent = ''; chgEl.className = 'modal-chg';
@@ -650,6 +798,21 @@ async function changeRange(range) {
   document.querySelectorAll('.range-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.range === range);
   });
+
+  // Update modal header change % to match selected range
+  const inst = instruments.find(i => i.key === currentKey);
+  if (inst) {
+    const chg   = _instChg(inst, range);
+    const chgEl = document.getElementById('m-chg');
+    if (chg === null) {
+      chgEl.textContent = ''; chgEl.className = 'modal-chg';
+    } else if (chg > 0) {
+      chgEl.textContent = '\u25b2 +' + chg.toFixed(2) + '%'; chgEl.className = 'modal-chg up';
+    } else {
+      chgEl.textContent = '\u25bc ' + chg.toFixed(2) + '%'; chgEl.className = 'modal-chg down';
+    }
+  }
+
   resetChart();
   try {
     const res = await fetch('/api/history/' + currentKey + '?range=' + range);

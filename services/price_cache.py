@@ -24,14 +24,18 @@ def _update_instrument(inst: dict) -> None:
     key = inst["key"]
     try:
         result = inst["fetch"]()
-        if isinstance(result, tuple):
+        if isinstance(result, tuple) and len(result) == 3:
+            new_price, new_prev, new_changes = result
+        elif isinstance(result, tuple):
             new_price, new_prev = result
+            new_changes = {}
         else:
-            new_price, new_prev = result, None
+            new_price, new_prev, new_changes = result, None, {}
         error = None
     except Exception as exc:
-        new_price = None
-        new_prev  = None
+        new_price   = None
+        new_prev    = None
+        new_changes = {}
         error = str(exc)[:100]
 
     with _cache_lock:
@@ -39,17 +43,25 @@ def _update_instrument(inst: dict) -> None:
         ts = datetime.now(timezone.utc).isoformat()
         if error is None:
             _price_data[key] = {
-                "price":      new_price,
-                "prev_price": new_prev if new_prev is not None else cached.get("prev_price"),
-                "error":      None,
-                "ts":         ts,
+                "price":       new_price,
+                "prev_price":  new_prev if new_prev is not None else cached.get("prev_price"),
+                "change_1d":   new_changes.get("change_1d"),
+                "change_1w":   new_changes.get("change_1w"),
+                "change_1mo":  new_changes.get("change_1mo"),
+                "change_1y":   new_changes.get("change_1y"),
+                "error":       None,
+                "ts":          ts,
             }
         else:
             _price_data[key] = {
-                "price":      cached.get("price"),
-                "prev_price": cached.get("prev_price"),
-                "error":      error,
-                "ts":         ts,
+                "price":       cached.get("price"),
+                "prev_price":  cached.get("prev_price"),
+                "change_1d":   cached.get("change_1d"),
+                "change_1w":   cached.get("change_1w"),
+                "change_1mo":  cached.get("change_1mo"),
+                "change_1y":   cached.get("change_1y"),
+                "error":       error,
+                "ts":          ts,
             }
 
 

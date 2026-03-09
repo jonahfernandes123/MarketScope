@@ -174,6 +174,54 @@ INSTRUMENTS: list[dict] = [
         "icon":      "&#9889;",
         "accent":    "#f43f5e",
     },
+    {
+        "key":       "rbobgas",
+        "label":     "RBOB Gasoline",
+        "fetch":     lambda: fetch_yf("RB=F"),
+        "prefix":    "$",
+        "suffix":    " /gal",
+        "decimals":  4,
+        "thousands": False,
+        "ticker":    "RB=F",
+        "icon":      "&#9679;",
+        "accent":    "#16a34a",
+    },
+    {
+        "key":       "heatingoil",
+        "label":     "Heating Oil",
+        "fetch":     lambda: fetch_yf("HO=F"),
+        "prefix":    "$",
+        "suffix":    " /gal",
+        "decimals":  4,
+        "thousands": False,
+        "ticker":    "HO=F",
+        "icon":      "&#9679;",
+        "accent":    "#0ea5e9",
+    },
+    {
+        "key":       "aluminium",
+        "label":     "Aluminium",
+        "fetch":     lambda: fetch_yf("ALI=F"),
+        "prefix":    "$",
+        "suffix":    " /lb",
+        "decimals":  4,
+        "thousands": False,
+        "ticker":    "ALI=F",
+        "icon":      "&#9671;",
+        "accent":    "#64748b",
+    },
+    {
+        "key":       "palladium",
+        "label":     "Palladium",
+        "fetch":     lambda: fetch_yf("PA=F"),
+        "prefix":    "$",
+        "suffix":    " /oz",
+        "decimals":  2,
+        "thousands": True,
+        "ticker":    "PA=F",
+        "icon":      "&#9671;",
+        "accent":    "#7c3aed",
+    },
 ]
 
 INSTRUMENT_MAP = {i["key"]: i for i in INSTRUMENTS}
@@ -534,6 +582,115 @@ SUMMARIES: dict[str, dict] = {
             "LNG terminal outages remain the primary short-term volatility catalysts."
         ),
     },
+    "rbobgas": {
+        "overview": (
+            "RBOB Gasoline (Reformulated Blendstock for Oxygenate Blending) is the primary US gasoline "
+            "futures benchmark, traded on the NYMEX. Prices directly determine retail pump prices across "
+            "the United States and are driven by crude oil input costs, refinery runs, seasonal blending "
+            "specification changes, and regional supply-demand dynamics."
+        ),
+        "macro": [
+            "Crude oil cost (~55-60% of gasoline price) is the dominant input — Brent and WTI moves flow through",
+            "US refinery utilisation rates determine how quickly crude is converted to gasoline inventory",
+            "Summer driving season (May-Sep) drives seasonal demand peaks and blending spec upgrades",
+            "Ethanol blend mandates (RVP standards) create spring price spikes as summer-spec product is produced",
+            "Consumer discretionary spending and vehicle miles traveled are the underlying demand indicators",
+        ],
+        "geopolitical": [
+            "OPEC+ production decisions affect crude input costs and cascade into gasoline retail prices",
+            "Gulf Coast refinery concentration (Texas, Louisiana) — hurricane season creates supply disruption risk",
+            "US Strategic Petroleum Reserve releases can rapidly ease gasoline supply tightness",
+            "Russia-Ukraine conflict raised global crude costs, contributing to 2022 pump price records",
+            "US-China trade tensions affecting freight costs and indirectly influencing energy complex pricing",
+        ],
+        "outlook": (
+            "RBOB prices track crude oil input costs with a refinery margin overlay. Near-term direction "
+            "is set by WTI/Brent moves, US refinery run rates, and seasonal demand patterns. The structural "
+            "long-term headwind is EV adoption gradually eroding gasoline demand in the developed world."
+        ),
+    },
+    "heatingoil": {
+        "overview": (
+            "Heating Oil (HO=F, NYMEX No. 2 Fuel Oil) is a distillate fuel product used for residential "
+            "heating and as a proxy for diesel and jet fuel pricing. It is the most weather-sensitive "
+            "energy futures contract, with winter demand spikes in the US Northeast and Europe directly "
+            "driving sharp seasonal price moves."
+        ),
+        "macro": [
+            "Winter heating demand in the US Northeast (largest consuming region) is the primary seasonal driver",
+            "Distillate inventories (diesel + heating oil) at Cushing and PADD 1 are the key supply signal",
+            "Diesel demand from trucking and freight tracks industrial production and consumer goods flows",
+            "Jet fuel demand recovery post-COVID structurally tightened the distillate complex",
+            "Refinery crack spreads (HO vs. crude) reflect margin environment and refinery incentive to produce",
+        ],
+        "geopolitical": [
+            "Russia's diesel export bans (2023) significantly tightened European distillate markets",
+            "Middle East conflict risk raises crude input costs that flow through to heating oil prices",
+            "EU sanctions on Russian refined products forced European buyers into Atlantic Basin alternatives",
+            "Houthi Red Sea attacks disrupting tanker routes raised freight costs for distillate shipments",
+            "Cold snap forecasts in the US Northeast routinely trigger sharp heating oil price spikes",
+        ],
+        "outlook": (
+            "Heating oil prices are set by crude input costs plus the distillate crack spread. The structural "
+            "bull case is tight global diesel supply from sanctions on Russian exports and rising jet fuel demand. "
+            "Weather volatility in the US Northeast remains the primary short-term price catalyst."
+        ),
+    },
+    "aluminium": {
+        "overview": (
+            "Aluminium is the world's most widely used non-ferrous metal, with applications spanning "
+            "packaging, automotive, aerospace, construction, and the energy transition. China produces "
+            "over 55% of global supply, making PBOC policy, power costs, and Chinese industrial activity "
+            "the dominant price drivers. Smelting is intensely energy-intensive — power costs account for "
+            "30-40% of production costs globally."
+        ),
+        "macro": [
+            "China's smelting capacity (~55% of global supply) and power tariff policy are the primary supply drivers",
+            "Energy cost is ~30-40% of aluminium production cost — power price spikes directly hit margins",
+            "EV lightweighting megatrend increasing aluminium content per vehicle vs. traditional steel",
+            "Solar panel frames and mounting structures creating structural new demand from renewable buildout",
+            "LME warehouse stock levels and cancelled warrants are the key near-term price indicators",
+        ],
+        "geopolitical": [
+            "Russian RUSAL accounts for ~6% of global supply — Western sanctions created significant market dislocation",
+            "China's electricity rationing policies (during grid stress periods) directly constrain smelter output",
+            "US and EU import tariffs on Chinese aluminium products redirecting trade flows",
+            "Guinea bauxite supply (the primary alumina feedstock) is a critical single-country risk",
+            "EU Carbon Border Adjustment Mechanism (CBAM) raising costs of high-carbon aluminium imports",
+        ],
+        "outlook": (
+            "Aluminium's long-term demand outlook is structurally positive from lightweighting and energy transition "
+            "applications. Near-term prices remain hostage to Chinese smelter output decisions and power costs. "
+            "The RUSAL sanctions overhang and Guinea bauxite concentration create persistent supply-side tail risks."
+        ),
+    },
+    "palladium": {
+        "overview": (
+            "Palladium is a platinum-group metal primarily used in catalytic converters for petrol (gasoline) "
+            "engine vehicles, where it converts harmful exhaust emissions. Over 80% of annual supply comes "
+            "from Russia and South Africa, creating extreme concentration risk. The EV transition represents "
+            "the dominant long-term structural headwind as internal combustion engine volumes decline."
+        ),
+        "macro": [
+            "Petrol vehicle catalytic converter demand accounts for ~80% of annual palladium consumption",
+            "EV market share growth is the primary structural headwind — no palladium needed in battery vehicles",
+            "Global auto production volumes (SAAR data) are the key leading demand indicator",
+            "Palladium historically traded at a large premium to platinum; that premium has been narrowing",
+            "Physical deficit markets in 2019-2022 pushed prices above $3,000/oz; structural surplus now emerging",
+        ],
+        "geopolitical": [
+            "Russia (Norilsk Nickel) supplies ~40% of global palladium — Western sanctions created major supply risk",
+            "South Africa supplies ~35-40% — power outages (load-shedding) and labour disputes are recurring risks",
+            "Any escalation of Russia-Ukraine conflict or new sanctions directly threaten palladium supply chains",
+            "Auto manufacturers have been building palladium inventories as supply security buffers since 2022",
+            "EU and US emission standards (Euro 7, EPA Tier 3) driving catalyst technology efficiency improvements",
+        ],
+        "outlook": (
+            "Palladium faces a structural demand decline as EV penetration erodes petrol vehicle production volumes. "
+            "The market is transitioning from deficit to surplus, which is the primary long-term price headwind. "
+            "Near-term, Russian supply disruption risk and auto production cycles remain the key price catalysts."
+        ),
+    },
     "ttfgas": {
         "overview": (
             "TTF (Title Transfer Facility) is Europe's primary natural gas trading hub, based in the "
@@ -577,8 +734,12 @@ CONTEXT_QUERIES = {
     "gbpusd":   "GBP USD pound dollar exchange rate Bank of England",
     "usdjpy":   "USD JPY yen dollar exchange rate Bank of Japan",
     "usdcnh":   "USD CNH yuan dollar exchange rate China PBoC",
-    "brent":    "brent crude oil price OPEC energy supply",
-    "wti":      "WTI crude oil price OPEC energy supply United States",
-    "henryhub": "natural gas price LNG market Henry Hub",
-    "ttfgas":   "European TTF gas price energy market supply",
+    "brent":      "brent crude oil price OPEC energy supply",
+    "wti":        "WTI crude oil price OPEC energy supply United States",
+    "henryhub":   "natural gas price LNG market Henry Hub",
+    "ttfgas":     "European TTF gas price energy market supply",
+    "rbobgas":    "RBOB gasoline price fuel refinery energy market",
+    "heatingoil": "heating oil diesel price distillate energy market",
+    "aluminium":  "aluminium aluminum price China smelter LME supply",
+    "palladium":  "palladium price autocatalyst Russia supply EV",
 }

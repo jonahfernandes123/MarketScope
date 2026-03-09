@@ -87,20 +87,23 @@
     <div class="section-label">Live Market Pulse</div>
     <div class="pulse-strip" id="pulse-strip"></div>
 
+    <div class="section-label">Market Signals</div>
+    <div class="signals-strip" id="signals-strip"></div>
+
     <div class="section-label">Today&rsquo;s Overview</div>
     <div class="briefing-grid" id="briefing-grid">
 
       <!-- Biggest Movers card -->
       <div class="bcard" id="card-movers" style="--accent:#f59e0b" onclick="openBriefingModal('movers')">
         <div class="bcard-accent"></div>
-        <div class="bcard-tag">Live</div>
+        <div class="bcard-tag">Live &middot; 24H</div>
         <div class="bcard-title">Biggest Movers</div>
         <div class="bcard-body" id="preview-movers">
           <div style="color:#f59e0b;font-weight:600;font-size:0.95rem;margin-bottom:6px;">&#9650; Loading top movers&hellip;</div>
           <div style="color:var(--muted);font-size:0.82rem;">Live 24h changes loading. Click to see full rankings.</div>
         </div>
         <div class="bcard-footer">
-          <span>24h daily change</span>
+          <span>24h % change across all instruments</span>
           <span class="bcard-cta">See all &rarr;</span>
         </div>
       </div>
@@ -147,10 +150,16 @@
     <div class="prices-controls">
       <span class="prices-controls-label">View by</span>
       <div class="sort-tabs">
-        <button class="sort-tab active" id="sort-tab-grouped" onclick="setPricesSort('grouped')">Grouped</button>
-        <button class="sort-tab" id="sort-tab-gainers" onclick="setPricesSort('gainers')">Gainers</button>
-        <button class="sort-tab" id="sort-tab-losers" onclick="setPricesSort('losers')">Losers</button>
-        <button class="sort-tab" id="sort-tab-alpha"   onclick="setPricesSort('alpha')">A&ndash;Z</button>
+        <button class="sort-tab active" id="sort-tab-grouped" onclick="setPricesSort('grouped')">By Sector</button>
+        <button class="sort-tab" id="sort-tab-gainers" onclick="setPricesSort('gainers')">Top Gainers</button>
+        <button class="sort-tab" id="sort-tab-losers" onclick="setPricesSort('losers')">Top Losers</button>
+      </div>
+      <span class="prices-controls-label" style="margin-left:16px;">Change</span>
+      <div class="sort-tabs">
+        <button class="sort-tab chg-tab active" id="chg-tab-1d"  onclick="setMarketsRange('1d')">1D</button>
+        <button class="sort-tab chg-tab"        id="chg-tab-1w"  onclick="setMarketsRange('1w')">1W</button>
+        <button class="sort-tab chg-tab"        id="chg-tab-1mo" onclick="setMarketsRange('1mo')">1M</button>
+        <button class="sort-tab chg-tab"        id="chg-tab-1y"  onclick="setMarketsRange('1y')">1Y</button>
       </div>
     </div>
     <div class="grid" id="grid"></div>
@@ -161,7 +170,7 @@
 <div class="view" id="view-news">
   <main class="page">
     <h1 class="page-title">Market News</h1>
-    <p class="page-subtitle">Latest headlines by asset class &mdash; sourced from Yahoo Finance</p>
+    <p class="page-subtitle">Headlines by asset class &mdash; click any column to expand or collapse</p>
     <div id="news-page-body">
       <div class="placeholder"><span class="spin"></span>Loading news&hellip;</div>
     </div>
