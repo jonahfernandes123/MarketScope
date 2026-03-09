@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Snapshot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ── Side drawer backdrop ── -->
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+
+<!-- ── Side drawer ── -->
+<nav class="side-drawer" id="side-drawer">
+  <div class="drawer-header">
+    <div class="drawer-brand">
+      <div class="header-logo">M</div>
+      <span>Market Snapshot</span>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">&#x2715;</button>
+  </div>
+  <div class="drawer-section-label">Navigation</div>
+  <div class="drawer-nav">
+    <div class="drawer-link active" id="nav-home" onclick="showView('home')">
+      <span class="drawer-link-icon">&#8962;</span> Home
+    </div>
+    <div class="drawer-link" id="nav-commodities" onclick="showView('commodities')">
+      <span class="drawer-link-icon">&#9670;</span> Commodities
+    </div>
+  </div>
+</nav>
+
+<!-- ── Header ── -->
+<header class="header">
+  <div class="header-left">
+    <button class="hamburger-btn" id="menu-btn" onclick="openDrawer()" title="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">M</div>
+    <span class="header-title">Market Snapshot</span>
+  </div>
+  <div class="header-right">
+    <div class="clock" id="clock">--</div>
+    <div class="refresh-row">
+      <span class="live-dot"></span>
+      <span class="refresh-label">Next update <b id="countdown">{{ refresh_seconds }}</b>s</span>
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill" style="width:100%"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ── Home View ── -->
+<div class="view active" id="view-home">
+  <main class="page">
+    <h1 class="page-title">Market Briefing</h1>
+    <p class="page-subtitle" id="date-line">Loading&hellip;</p>
+
+    <div class="section-label">Today&rsquo;s Overview</div>
+    <div class="briefing-grid" id="briefing-grid">
+
+      <!-- Biggest Movers card -->
+      <div class="bcard" id="card-movers" style="--accent:#f59e0b" onclick="openBriefingModal('movers')">
+        <div class="bcard-accent"></div>
+        <div class="bcard-tag">Live</div>
+        <div class="bcard-title">Biggest Movers</div>
+        <div class="bcard-body" id="preview-movers">
+          <div style="color:#f59e0b;font-weight:600;font-size:0.95rem;margin-bottom:6px;">&#9650; Loading top movers&hellip;</div>
+          <div style="color:var(--muted);font-size:0.82rem;">Live 24h changes loading. Click to see full rankings.</div>
+        </div>
+        <div class="bcard-footer">
+          <span>24h daily change</span>
+          <span class="bcard-cta">See all &rarr;</span>
+        </div>
+      </div>
+
+      <!-- Key Market News card -->
+      <div class="bcard" id="card-news" style="--accent:#10b981" onclick="openBriefingModal('news')">
+        <div class="bcard-accent"></div>
+        <div class="bcard-tag">News</div>
+        <div class="bcard-title">Key Market News</div>
+        <div class="bcard-body" id="preview-news">
+          <div style="color:#10b981;font-weight:600;font-size:0.95rem;margin-bottom:6px;">&#9679; Headlines loading&hellip;</div>
+          <div style="color:var(--muted);font-size:0.82rem;">Latest market headlines sourced from Yahoo Finance. Click to read.</div>
+        </div>
+        <div class="bcard-footer">
+          <span>Yahoo Finance</span>
+          <span class="bcard-cta">Read more &rarr;</span>
+        </div>
+      </div>
+
+      <!-- Today's Market Drivers card -->
+      <div class="bcard" id="card-drivers" style="--accent:#8b5cf6" onclick="openBriefingModal('drivers')">
+        <div class="bcard-accent"></div>
+        <div class="bcard-tag">Macro</div>
+        <div class="bcard-title">Today&rsquo;s Market Drivers</div>
+        <div class="bcard-body" id="preview-drivers">
+          <div style="color:#8b5cf6;font-weight:600;font-size:0.95rem;margin-bottom:6px;">&#9670; Macro drivers loading&hellip;</div>
+          <div style="color:var(--muted);font-size:0.82rem;">Fed policy, inflation data, geopolitical risk. Click for full briefing.</div>
+        </div>
+        <div class="bcard-footer">
+          <span>Google News</span>
+          <span class="bcard-cta">See all &rarr;</span>
+        </div>
+      </div>
+
+    </div><!-- /briefing-grid -->
+  </main>
+</div><!-- /view-home -->
+
+<!-- ── Commodities View ── -->
+<div class="view" id="view-commodities">
+  <main class="page">
+    <h1 class="page-title">Live Markets</h1>
+    <p class="page-subtitle">Real-time prices &mdash; click any instrument for chart, news &amp; analysis</p>
+    <div class="section-label">Live Prices &mdash; vs prev. close</div>
+    <div class="grid" id="grid"></div>
+  </main>
+</div><!-- /view-commodities -->
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  Data &mdash; CoinGecko &nbsp;&middot;&nbsp; Yahoo Finance &nbsp;&middot;&nbsp; Frankfurter.app &nbsp;&middot;&nbsp; Google News
+  <br>Auto-refreshes every {{ refresh_seconds }} seconds &nbsp;&middot;&nbsp; All times UTC &nbsp;&middot;&nbsp; For informational purposes only
+</footer>
+
+<!-- ── Briefing Modal ── -->
+<div class="overlay" id="briefing-overlay">
+  <div class="modal" id="briefing-modal">
+    <button class="modal-close" id="briefing-close-btn">&#x2715;&ensp;Close</button>
+    <div class="modal-title"    id="bm-title"></div>
+    <div class="modal-subtitle" id="bm-subtitle"></div>
+    <div class="modal-divider"></div>
+    <div id="briefing-modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Commodity Detail Modal ── -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal">
+    <button class="modal-close" id="close-btn">&#x2715;&ensp;Close</button>
+
+    <div class="modal-header">
+      <div class="modal-title-row">
+        <span class="modal-badge" id="m-icon"></span>
+        <span class="modal-name"  id="m-name"></span>
+      </div>
+      <div class="modal-price-row">
+        <span class="modal-price" id="m-price">--</span>
+        <span class="modal-chg"   id="m-chg"></span>
+      </div>
+    </div>
+
+    <div class="chart-section-header">
+      <span class="chart-section-label">Price History</span>
+      <div class="range-tabs">
+        <button class="range-tab" data-range="1d"  onclick="changeRange('1d')">24H</button>
+        <button class="range-tab active" data-range="1mo" onclick="changeRange('1mo')">1M</button>
+        <button class="range-tab" data-range="1y"  onclick="changeRange('1y')">1Y</button>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <div class="placeholder" id="chart-ph"><span class="spin"></span>Loading chart&hellip;</div>
+      <canvas id="price-chart"></canvas>
+    </div>
+
+    <div class="articles-section">
+      <div class="modal-divider"></div>
+      <div class="section-label" style="margin-bottom:12px;">Latest Articles</div>
+      <div id="articles-area">
+        <div class="placeholder"><span class="spin"></span>Loading articles&hellip;</div>
+      </div>
+    </div>
+
+    <div class="modal-divider"></div>
+    <div class="section-label" style="margin-bottom:16px;">Macro &amp; Geopolitical Analysis</div>
+    <div id="summary-area">
+      <div class="placeholder"><span class="spin"></span>Loading analysis&hellip;</div>
+    </div>
+  </div>
+</div>
+
+<script>const REFRESH = {{ refresh_seconds }};</script>
+<script src="/static/app.js"></script>
+</body>
+</html>
