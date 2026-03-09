@@ -23,7 +23,7 @@ import threading
 from flask import Flask, jsonify, redirect, render_template, request as freq
 
 from models.instruments import CONTEXT_QUERIES, INSTRUMENT_MAP, INSTRUMENTS, SUMMARIES
-from services.market_data import YFINANCE_AVAILABLE, _history_bitcoin, _history_eurusd, _history_yf
+from services.market_data import YFINANCE_AVAILABLE, _history_bitcoin, _history_ethereum, _history_eurusd, _history_yf
 from services.news_fetcher import _fetch_context_news, _fetch_yf_news
 from services.price_cache import _background_loop, _cache_lock, _price_data, refresh_prices
 
@@ -56,11 +56,13 @@ def api_history(key: str):
     if not inst:
         return jsonify({"error": "Unknown instrument"}), 404
     range_param = freq.args.get("range", "1mo")
-    if range_param not in ("1d", "1mo", "1y"):
+    if range_param not in ("1d", "1w", "1mo", "1y"):
         range_param = "1mo"
     try:
         if key == "bitcoin":
             data = _history_bitcoin(range_param)
+        elif key == "ethereum":
+            data = _history_ethereum(range_param)
         elif key == "eurusd":
             data = _history_eurusd(range_param)
         elif inst["ticker"]:

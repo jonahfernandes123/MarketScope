@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.market_data import fetch_bitcoin, fetch_eurusd, fetch_yf
+from services.market_data import fetch_bitcoin, fetch_ethereum, fetch_eurusd, fetch_yf
 
 
 # ── Instrument registry ──────────────────────────────────────────────────────────
@@ -17,6 +17,18 @@ INSTRUMENTS: list[dict] = [
         "ticker":    "BTC-USD",
         "icon":      "&#x20BF;",
         "accent":    "#f7931a",
+    },
+    {
+        "key":       "ethereum",
+        "label":     "Ethereum",
+        "fetch":     fetch_ethereum,
+        "prefix":    "$",
+        "suffix":    "",
+        "decimals":  2,
+        "thousands": True,
+        "ticker":    "ETH-USD",
+        "icon":      "&#926;",
+        "accent":    "#627eea",
     },
     {
         "key":       "gold",
@@ -55,6 +67,18 @@ INSTRUMENTS: list[dict] = [
         "accent":    "#c87941",
     },
     {
+        "key":       "platinum",
+        "label":     "Platinum",
+        "fetch":     lambda: fetch_yf("PL=F"),
+        "prefix":    "$",
+        "suffix":    " /oz",
+        "decimals":  2,
+        "thousands": False,
+        "ticker":    "PL=F",
+        "icon":      "&#9671;",
+        "accent":    "#cbd5e1",
+    },
+    {
         "key":       "eurusd",
         "label":     "EUR / USD",
         "fetch":     fetch_eurusd,
@@ -67,6 +91,42 @@ INSTRUMENTS: list[dict] = [
         "accent":    "#3b82f6",
     },
     {
+        "key":       "gbpusd",
+        "label":     "GBP / USD",
+        "fetch":     lambda: fetch_yf("GBPUSD=X"),
+        "prefix":    "",
+        "suffix":    "",
+        "decimals":  4,
+        "thousands": False,
+        "ticker":    "GBPUSD=X",
+        "icon":      "&#163;/$",
+        "accent":    "#e11d48",
+    },
+    {
+        "key":       "usdjpy",
+        "label":     "USD / JPY",
+        "fetch":     lambda: fetch_yf("JPY=X"),
+        "prefix":    "",
+        "suffix":    "",
+        "decimals":  2,
+        "thousands": False,
+        "ticker":    "JPY=X",
+        "icon":      "&#165;",
+        "accent":    "#ef4444",
+    },
+    {
+        "key":       "usdcnh",
+        "label":     "USD / CNH",
+        "fetch":     lambda: fetch_yf("CNH=X"),
+        "prefix":    "",
+        "suffix":    "",
+        "decimals":  4,
+        "thousands": False,
+        "ticker":    "CNH=X",
+        "icon":      "&#20803;",
+        "accent":    "#f59e0b",
+    },
+    {
         "key":       "brent",
         "label":     "Brent Crude",
         "fetch":     lambda: fetch_yf("BZ=F"),
@@ -77,6 +137,18 @@ INSTRUMENTS: list[dict] = [
         "ticker":    "BZ=F",
         "icon":      "&#9679;",
         "accent":    "#10b981",
+    },
+    {
+        "key":       "wti",
+        "label":     "WTI Crude",
+        "fetch":     lambda: fetch_yf("CL=F"),
+        "prefix":    "$",
+        "suffix":    " /bbl",
+        "decimals":  2,
+        "thousands": False,
+        "ticker":    "CL=F",
+        "icon":      "&#9679;",
+        "accent":    "#ef4444",
     },
     {
         "key":       "henryhub",
@@ -134,6 +206,60 @@ SUMMARIES: dict[str, dict] = {
             "Bitcoin's medium-term trajectory is tied to global liquidity expansion, ETF inflow momentum, "
             "and the diminishing post-halving supply. Regulatory clarity in the US and Europe remains the "
             "key variable for the next wave of institutional adoption."
+        ),
+    },
+    "ethereum": {
+        "overview": (
+            "Ethereum is the world's leading programmable blockchain, underpinning the majority of "
+            "decentralised finance (DeFi), NFT infrastructure, and Web3 applications. Its transition "
+            "to Proof-of-Stake ('The Merge', 2022) made ETH a yield-bearing, deflationary asset "
+            "with a supply issuance directly tied to network usage."
+        ),
+        "macro": [
+            "Spot Ethereum ETF approvals (mid-2024) opened institutional capital flows into ETH",
+            "EIP-1559 fee burn mechanism makes ETH deflationary when network demand is high",
+            "Layer-2 scaling (Arbitrum, Optimism, Base) reducing fees and driving DeFi adoption",
+            "ETH staking yield (~4-5% APR) positions it as a 'crypto bond' vs. Bitcoin's 'digital gold'",
+            "Risk appetite and liquidity cycles closely mirror Bitcoin — Fed policy the dominant macro signal",
+        ],
+        "geopolitical": [
+            "US SEC ETF approvals marked a regulatory turning point for Ethereum institutional adoption",
+            "EU MiCA regulation providing clearer compliance framework for ETH-based DeFi products",
+            "China's DeFi and crypto trading restrictions limit but do not eliminate mainland exposure",
+            "Ethereum Foundation's global developer base provides censorship-resistance vs. national restrictions",
+            "Sanctions compliance in DeFi remains a key regulatory flashpoint for ETH infrastructure",
+        ],
+        "outlook": (
+            "Ethereum's medium-term outlook depends on Layer-2 ecosystem growth sustaining on-chain fee "
+            "revenue and the continued expansion of real-world asset tokenisation on the base layer. "
+            "Spot ETF inflows and staking adoption are the primary catalysts for the next re-rating cycle."
+        ),
+    },
+    "platinum": {
+        "overview": (
+            "Platinum is a rare precious metal with critical industrial applications in automotive catalysts, "
+            "hydrogen fuel cells, and chemical manufacturing. Supply is highly concentrated — over 70% comes "
+            "from South Africa — while demand is split between autocatalysis (petrol engines), jewellery, "
+            "and the emerging green hydrogen economy."
+        ),
+        "macro": [
+            "Platinum trades at a significant discount to palladium, reversing its historic premium",
+            "Hydrogen fuel cell technology (PEM electrolysers) is the primary long-term demand growth driver",
+            "ICE vehicle production — the main demand source — gradually declining as EV share rises",
+            "Gold/platinum ratio above 1.0x historically signals platinum undervaluation vs. gold",
+            "Industrial demand from chemicals, glass, and refinery sectors provides a stable demand base",
+        ],
+        "geopolitical": [
+            "South Africa supplies ~75% of global platinum — power outages (load-shedding) and labour strikes are key supply risks",
+            "Russian sanctions (Norilsk Nickel) affected palladium more than platinum, but highlighted supply concentration risk",
+            "Green hydrogen investment programmes (EU Hydrogen Strategy, US IRA) boosting PEM electrolyser demand",
+            "Zimbabwe's platinum output growing, partially diversifying supply from South Africa",
+            "EU and US emission standards affecting autocatalyst demand: diesel catalyst phase-out is a structural headwind",
+        ],
+        "outlook": (
+            "Platinum's near-term price faces headwinds from the EV transition reducing autocatalyst demand, "
+            "but the hydrogen economy megatrend offers a long-term structural demand tailwind. South African "
+            "supply constraints and the historically wide gold/platinum spread provide a valuation floor argument."
         ),
     },
     "gold": {
@@ -243,6 +369,88 @@ SUMMARIES: dict[str, dict] = {
             "trigger a sharp relief rally."
         ),
     },
+    "gbpusd": {
+        "overview": (
+            "GBP/USD ('Cable') is one of the oldest and most liquid currency pairs, reflecting the economic "
+            "and monetary policy divergence between the United Kingdom and the United States. Sterling is "
+            "sensitive to Bank of England rate decisions, UK growth data, and the ongoing implications of "
+            "Brexit on trade, financial services, and economic competitiveness."
+        ),
+        "macro": [
+            "Bank of England vs. Fed rate differential: BoE cutting cycle pace vs. Fed stance drives near-term moves",
+            "UK services inflation stickier than headline — constraining the pace of BoE rate cuts",
+            "UK labour market data (wages, unemployment) is the primary BoE policy signal",
+            "US dollar index (DXY) strength/weakness drives GBP/USD as much as UK-specific factors",
+            "UK fiscal credibility and gilt market stability (2022 mini-budget memory) remains a Sterling risk factor",
+        ],
+        "geopolitical": [
+            "UK-EU trade relationship post-Brexit limiting goods trade and creating ongoing tariff friction",
+            "UK-US trade deal negotiations — potential catalyst for Sterling appreciation",
+            "Financial services exports remain UK's largest trade surplus driver — EU market access is key",
+            "Russia-Ukraine conflict energy impact raised UK energy import bills — structural current account headwind",
+            "UK general election cycle and fiscal policy credibility directly affect gilt yields and Sterling",
+        ],
+        "outlook": (
+            "GBP/USD direction hinges on the relative pace of BoE vs. Fed cutting cycles and UK growth "
+            "resilience. Sterling has recovered significantly from 2022 lows but remains vulnerable to "
+            "fiscal concerns, current account deficits, and any resurgence of US dollar strength."
+        ),
+    },
+    "usdjpy": {
+        "overview": (
+            "USD/JPY is the most liquid dollar pair in Asian trading hours and the primary expression "
+            "of global interest rate differentials. The yen's long weakness has been driven by the Bank "
+            "of Japan's ultra-loose monetary policy — negative rates and yield curve control — in stark "
+            "contrast to aggressive Fed tightening. Any BoJ policy normalisation is the defining macro event."
+        ),
+        "macro": [
+            "BoJ yield curve control (YCC) policy and its gradual dismantling is the defining USD/JPY driver",
+            "Massive US-Japan interest rate differential historically correlated with yen weakness",
+            "Japan's export competitiveness benefits from weak yen — policy normalisation is politically complex",
+            "Japanese government bond (JGB) market stability is a prerequisite for BoJ tightening",
+            "Risk-off events (equity selloffs, geopolitical crises) typically trigger yen appreciation (safe haven)",
+        ],
+        "geopolitical": [
+            "Japan's deep security alliance with the US limits geopolitical divergence in FX policy",
+            "Ministry of Finance FX intervention threat: BoJ/MoF have intervened at 150+ levels historically",
+            "China economic slowdown directly affects Japan's export-sensitive economy and JPY",
+            "US-China trade tensions create indirect JPY safe-haven demand in Asia-Pacific risk-off episodes",
+            "North Korea and Taiwan Strait risks are the primary regional geopolitical JPY safe-haven catalysts",
+        ],
+        "outlook": (
+            "USD/JPY's structural direction is set by the convergence of Fed cuts and BoJ rate normalisation. "
+            "As the differential narrows, yen appreciation pressure builds. The risk is that BoJ moves faster "
+            "than the market expects — triggering an unwinding of yen carry trades and sharp JPY strength."
+        ),
+    },
+    "usdcnh": {
+        "overview": (
+            "USD/CNH is the offshore Chinese yuan rate, traded in Hong Kong and globally, distinct from "
+            "the onshore CNY which is managed within a daily band by the People's Bank of China. CNH "
+            "reflects market pricing of China's economic trajectory, PBoC policy stance, capital flows, "
+            "and the state of US-China trade and geopolitical relations."
+        ),
+        "macro": [
+            "PBoC daily fixing (midpoint rate) is the primary CNH anchor — deviations signal policy intent",
+            "China's export surplus and capital account controls limit but do not eliminate market-driven moves",
+            "US-China interest rate differential and relative economic momentum drive directional bias",
+            "Chinese property sector deleveraging and deflationary pressures weigh on yuan appreciation",
+            "PBoC reserve requirement ratio and liquidity injections directly affect CNH market conditions",
+        ],
+        "geopolitical": [
+            "US-China trade tariffs and technology export controls are the dominant geopolitical CNH driver",
+            "Taiwan Strait tensions create episodic risk-off selling pressure on offshore yuan",
+            "BRICS de-dollarisation efforts and yuan internationalisation are long-term structural themes",
+            "Chinese capital controls limiting offshore yuan supply — PBoC directly manages the exchange rate",
+            "Belt and Road Initiative lending and yuan settlement agreements gradually expanding CNH usage",
+        ],
+        "outlook": (
+            "USD/CNH is less a free market than a managed expression of PBoC policy intent. The yuan's "
+            "direction depends on whether China prioritises export competitiveness (weak yuan) or capital "
+            "inflow attraction and internationalisation (stable/strong yuan). US tariff escalation is the "
+            "primary near-term risk to a sharper CNH depreciation."
+        ),
+    },
     "brent": {
         "overview": (
             "Brent Crude is the global benchmark for oil pricing, covering ~60% of international trade. "
@@ -267,6 +475,37 @@ SUMMARIES: dict[str, dict] = {
             "Brent is caught between OPEC+ supply discipline providing a floor and rising non-OPEC "
             "production limiting the ceiling. Middle East escalation risk remains the key upside catalyst, "
             "while a deeper-than-expected Chinese slowdown is the primary downside risk."
+        ),
+    },
+    "wti": {
+        "overview": (
+            "WTI (West Texas Intermediate) is the primary US crude oil benchmark, priced at "
+            "Cushing, Oklahoma and traded as the NYMEX CL futures contract. As the lighter, "
+            "sweeter counterpart to Brent, WTI reflects domestic shale production dynamics, "
+            "inventory levels at Cushing, and Gulf Coast export infrastructure. It typically "
+            "trades at a small discount to Brent, with the Brent-WTI spread fluctuating based "
+            "on US export logistics, refinery demand, and global supply-demand balance."
+        ),
+        "macro": [
+            "US shale (Permian, Bakken, Eagle Ford) output at record highs — naturally capping price upside",
+            "Cushing, Oklahoma storage levels are the primary near-term WTI price indicator",
+            "US Strategic Petroleum Reserve releases and refills directly impact domestic supply balance",
+            "Refinery utilisation rates and crack spreads determine how quickly crude is converted to products",
+            "Fed rate policy and USD strength are inversely correlated with commodity prices including WTI",
+        ],
+        "geopolitical": [
+            "OPEC+ production quota decisions set the global supply floor affecting WTI via arbitrage",
+            "Russia-Ukraine conflict and G7 price cap on Russian crude reshaping global trade flows",
+            "Middle East tensions (Iran, Houthi Red Sea attacks) embed a persistent risk premium",
+            "Mexico's Pemex production decline reducing heavy crude alternatives available to US refiners",
+            "Gulf Coast export terminal capacity increasingly linking WTI to global Brent pricing",
+        ],
+        "outlook": (
+            "WTI trades alongside Brent with added sensitivity to US-specific supply factors: shale output, "
+            "Cushing storage, and Gulf export capacity. The Brent-WTI spread is the key structural variable — "
+            "widening signals US pipeline bottlenecks; narrowing reflects growing US export integration. "
+            "OPEC+ cohesion, Middle East escalation risk, and US shale economics remain the three dominant "
+            "price-setting forces for the remainder of 2025."
         ),
     },
     "henryhub": {
@@ -329,11 +568,17 @@ SUMMARIES: dict[str, dict] = {
 
 CONTEXT_QUERIES = {
     "bitcoin":  "bitcoin price market ETF regulation economic",
+    "ethereum": "ethereum price market DeFi ETF regulation economic",
     "gold":     "gold price market central bank inflation economic",
     "silver":   "silver price market industrial demand supply",
     "copper":   "copper price market China demand supply",
+    "platinum": "platinum price market hydrogen fuel cell supply South Africa",
     "eurusd":   "EUR USD euro dollar exchange rate ECB Fed",
+    "gbpusd":   "GBP USD pound dollar exchange rate Bank of England",
+    "usdjpy":   "USD JPY yen dollar exchange rate Bank of Japan",
+    "usdcnh":   "USD CNH yuan dollar exchange rate China PBoC",
     "brent":    "brent crude oil price OPEC energy supply",
+    "wti":      "WTI crude oil price OPEC energy supply United States",
     "henryhub": "natural gas price LNG market Henry Hub",
     "ttfgas":   "European TTF gas price energy market supply",
 }

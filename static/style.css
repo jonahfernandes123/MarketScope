@@ -153,6 +153,29 @@ body {
   border-radius: 2px; transition: width 1s linear;
 }
 
+/* ── Top navigation tabs ─────────────────────────────────────── */
+.top-nav {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px; padding: 3px;
+}
+.top-nav-tab {
+  background: none; border: none;
+  color: var(--muted); font-family: inherit;
+  font-size: 0.75rem; font-weight: 600;
+  padding: 5px 14px; border-radius: 6px;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  letter-spacing: 0.03em;
+}
+.top-nav-tab:hover { color: var(--text); }
+.top-nav-tab.active {
+  background: var(--raised); color: var(--text);
+  border: 1px solid var(--border);
+}
+@media (max-width: 720px) { .top-nav { display: none; } }
+
 /* ── View system ─────────────────────────────────────────────── */
 .view { display: none; }
 .view.active { display: block; }
@@ -175,9 +198,14 @@ body {
 /* ── Briefing card grid ──────────────────────────────────────── */
 .briefing-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 14px;
   margin-bottom: 40px;
+}
+.briefing-grid .bcard:first-child { grid-row: 1 / 3; }
+@media (max-width: 800px) {
+  .briefing-grid { grid-template-columns: 1fr; }
+  .briefing-grid .bcard:first-child { grid-row: auto; }
 }
 
 /* ── Briefing card ───────────────────────────────────────────── */
@@ -192,7 +220,7 @@ body {
   position: relative;
   overflow: hidden;
   user-select: none;
-  min-height: 160px;
+  min-height: 220px;
   display: flex;
   flex-direction: column;
 }
@@ -273,12 +301,87 @@ body {
   gap: 8px; color: var(--muted); font-size: 0.8rem; padding: 24px;
 }
 
+/* ── Market Pulse strip ──────────────────────────────────────── */
+.pulse-strip {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  margin-bottom: 28px;
+  scrollbar-width: none;
+}
+.pulse-strip::-webkit-scrollbar { display: none; }
+.pulse-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent, #3b82f6);
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer; flex-shrink: 0;
+  min-width: 110px;
+  transition: background 0.15s, transform 0.15s;
+}
+.pulse-chip:hover { background: var(--raised); transform: translateY(-2px); }
+.pulse-name {
+  font-size: 0.6rem; font-weight: 600;
+  letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px;
+}
+.pulse-price {
+  font-size: 0.88rem; font-weight: 700;
+  color: var(--text); font-variant-numeric: tabular-nums;
+  margin-bottom: 3px; letter-spacing: -0.01em;
+}
+.pulse-chg {
+  font-size: 0.72rem; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Prices page controls ────────────────────────────────────── */
+.prices-controls {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px;
+}
+.prices-controls-label {
+  font-size: 0.65rem; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--dim);
+}
+.sort-tabs {
+  display: flex; gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px; padding: 3px;
+}
+.sort-tab {
+  background: none; border: none;
+  color: var(--muted); font-family: inherit;
+  font-size: 0.72rem; font-weight: 600;
+  padding: 4px 12px; border-radius: 5px;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  letter-spacing: 0.03em;
+}
+.sort-tab:hover { color: var(--text); }
+.sort-tab.active { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
+
 /* ── Price cards grid ────────────────────────────────────────── */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 12px;
   margin-bottom: 32px;
+}
+/* Grouped layout: labels and sub-grids span all columns */
+.grid-group-label {
+  grid-column: 1 / -1;
+  margin-top: 20px; margin-bottom: 0;
+}
+.grid-group-label:first-child { margin-top: 0; }
+.grid-group {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
 }
 .card {
   background: var(--surface); border: 1px solid var(--border);
@@ -397,6 +500,14 @@ body {
 .range-tab:hover { color: var(--text); }
 .range-tab.active { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
 .chart-wrap { position: relative; height: 230px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 26px; }
+.chart-retry-btn {
+  background: var(--raised); border: 1px solid var(--border);
+  color: var(--muted); font-family: inherit;
+  font-size: 0.68rem; font-weight: 600;
+  padding: 3px 10px; border-radius: 5px; cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.chart-retry-btn:hover { color: var(--text); border-color: var(--border-hi); }
 #price-chart { display: none; }
 .articles-section { margin-bottom: 26px; }
 .articles-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -428,12 +539,96 @@ body {
 .outlook-box { background: var(--bg); border-left: 3px solid var(--modal-accent, #3b82f6); border-radius: 0 8px 8px 0; padding: 14px 18px; font-size: 0.84rem; color: var(--text); line-height: 1.7; }
 .outlook-label { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--modal-accent, #3b82f6); margin-bottom: 7px; }
 
+/* ── Full-page news / macro lists ────────────────────────────── */
+.page-news-list li::before { color: #3b82f6; }
+.page-news-list a { color: var(--text); text-decoration: none; transition: color 0.12s; }
+.page-news-list a:hover { color: #3b82f6; }
+
 /* ── Footer ──────────────────────────────────────────────────── */
 .footer {
   text-align: center; padding: 22px 28px 26px;
   color: var(--dim); font-size: 0.66rem;
   border-top: 1px solid var(--border);
   margin-top: 32px; line-height: 1.8;
+}
+
+/* ── News page section labels ────────────────────────────────── */
+.news-section-label {
+  font-size: 0.62rem; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--dim); margin: 22px 0 0;
+  display: flex; align-items: center; gap: 10px;
+}
+.news-section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.news-section-label:first-child { margin-top: 0; }
+
+/* ── Macro theme blocks ──────────────────────────────────────── */
+.macro-themes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (max-width: 640px) { .macro-themes { grid-template-columns: 1fr; } }
+.macro-theme {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--theme-accent, #3b82f6);
+  border-radius: 0 10px 10px 0;
+  padding: 16px 18px;
+}
+.macro-theme-title {
+  font-size: 0.78rem; font-weight: 700;
+  color: var(--theme-accent, #3b82f6);
+  margin-bottom: 8px;
+}
+.macro-theme-text {
+  font-size: 0.77rem; color: var(--muted); line-height: 1.65;
+}
+
+/* ── Network page ────────────────────────────────────────────── */
+.network-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 32px;
+  margin-top: 14px;
+}
+.network-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 18px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.network-card:hover { background: var(--raised); border-color: var(--border-hi); }
+.network-card-header { display: flex; align-items: flex-start; gap: 12px; }
+.network-logo {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.66rem; font-weight: 800; color: #fff;
+  letter-spacing: 0.02em; flex-shrink: 0;
+}
+.network-card-meta { flex: 1; min-width: 0; }
+.network-card-name { font-size: 0.88rem; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+.network-card-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.network-tag {
+  font-size: 0.57rem; font-weight: 700;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--dim); background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 2px 7px; border-radius: 4px;
+}
+.network-tag-region { color: var(--muted); }
+.network-card-desc { font-size: 0.76rem; color: var(--muted); line-height: 1.6; }
+.network-card-contacts { border-top: 1px solid var(--border); padding-top: 10px; }
+.network-contacts-label {
+  font-size: 0.57rem; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--dim); margin-bottom: 5px;
+}
+.network-contacts-placeholder {
+  font-size: 0.73rem; color: var(--dim); font-style: italic;
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────── */

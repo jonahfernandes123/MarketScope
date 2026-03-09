@@ -29,8 +29,17 @@
     <div class="drawer-link active" id="nav-home" onclick="showView('home')">
       <span class="drawer-link-icon">&#8962;</span> Home
     </div>
-    <div class="drawer-link" id="nav-commodities" onclick="showView('commodities')">
-      <span class="drawer-link-icon">&#9670;</span> Commodities
+    <div class="drawer-link" id="nav-markets" onclick="showView('markets')">
+      <span class="drawer-link-icon">&#9670;</span> Markets
+    </div>
+    <div class="drawer-link" id="nav-news" onclick="showView('news')">
+      <span class="drawer-link-icon">&#9679;</span> News
+    </div>
+    <div class="drawer-link" id="nav-macro" onclick="showView('macro')">
+      <span class="drawer-link-icon">&#9670;</span> Macro
+    </div>
+    <div class="drawer-link" id="nav-network" onclick="showView('network')">
+      <span class="drawer-link-icon">&#9679;</span> Network
     </div>
   </div>
 </nav>
@@ -44,6 +53,15 @@
     <div class="header-logo">M</div>
     <span class="header-title">Market Snapshot</span>
   </div>
+
+  <nav class="top-nav" id="top-nav">
+    <button class="top-nav-tab active" id="tab-home"    onclick="showView('home')">Home</button>
+    <button class="top-nav-tab"        id="tab-markets" onclick="showView('markets')">Markets</button>
+    <button class="top-nav-tab"        id="tab-news"    onclick="showView('news')">News</button>
+    <button class="top-nav-tab"        id="tab-macro"   onclick="showView('macro')">Macro</button>
+    <button class="top-nav-tab"        id="tab-network" onclick="showView('network')">Network</button>
+  </nav>
+
   <div class="header-right">
     <div class="clock" id="clock">--</div>
     <div class="refresh-row">
@@ -61,6 +79,9 @@
   <main class="page">
     <h1 class="page-title">Market Briefing</h1>
     <p class="page-subtitle" id="date-line">Loading&hellip;</p>
+
+    <div class="section-label">Live Market Pulse</div>
+    <div class="pulse-strip" id="pulse-strip"></div>
 
     <div class="section-label">Today&rsquo;s Overview</div>
     <div class="briefing-grid" id="briefing-grid">
@@ -114,15 +135,56 @@
   </main>
 </div><!-- /view-home -->
 
-<!-- ── Commodities View ── -->
-<div class="view" id="view-commodities">
+<!-- ── Markets View ── -->
+<div class="view" id="view-markets">
   <main class="page">
     <h1 class="page-title">Live Markets</h1>
     <p class="page-subtitle">Real-time prices &mdash; click any instrument for chart, news &amp; analysis</p>
-    <div class="section-label">Live Prices &mdash; vs prev. close</div>
+    <div class="prices-controls">
+      <span class="prices-controls-label">View by</span>
+      <div class="sort-tabs">
+        <button class="sort-tab active" id="sort-tab-grouped" onclick="setPricesSort('grouped')">Grouped</button>
+        <button class="sort-tab" id="sort-tab-gainers" onclick="setPricesSort('gainers')">Gainers</button>
+        <button class="sort-tab" id="sort-tab-losers" onclick="setPricesSort('losers')">Losers</button>
+        <button class="sort-tab" id="sort-tab-alpha"   onclick="setPricesSort('alpha')">A&ndash;Z</button>
+      </div>
+    </div>
     <div class="grid" id="grid"></div>
   </main>
-</div><!-- /view-commodities -->
+</div><!-- /view-markets -->
+
+<!-- ── News View ── -->
+<div class="view" id="view-news">
+  <main class="page">
+    <h1 class="page-title">Market News</h1>
+    <p class="page-subtitle">Latest headlines by asset class &mdash; sourced from Yahoo Finance</p>
+    <div id="news-page-body">
+      <div class="placeholder"><span class="spin"></span>Loading news&hellip;</div>
+    </div>
+  </main>
+</div><!-- /view-news -->
+
+<!-- ── Macro View ── -->
+<div class="view" id="view-macro">
+  <main class="page">
+    <h1 class="page-title">Macro</h1>
+    <p class="page-subtitle">Market themes, macro context, and geopolitical drivers</p>
+    <div id="macro-page-body">
+      <div class="placeholder"><span class="spin"></span>Loading&hellip;</div>
+    </div>
+  </main>
+</div><!-- /view-macro -->
+
+<!-- ── Network View ── -->
+<div class="view" id="view-network">
+  <main class="page">
+    <h1 class="page-title">Network</h1>
+    <p class="page-subtitle">Commodity market participants &mdash; trading houses and hedge funds</p>
+    <div id="network-page-body">
+      <div class="placeholder"><span class="spin"></span>Loading&hellip;</div>
+    </div>
+  </main>
+</div><!-- /view-network -->
 
 <!-- ── Footer ── -->
 <footer class="footer">
@@ -161,6 +223,7 @@
       <span class="chart-section-label">Price History</span>
       <div class="range-tabs">
         <button class="range-tab" data-range="1d"  onclick="changeRange('1d')">24H</button>
+        <button class="range-tab" data-range="1w"  onclick="changeRange('1w')">1W</button>
         <button class="range-tab active" data-range="1mo" onclick="changeRange('1mo')">1M</button>
         <button class="range-tab" data-range="1y"  onclick="changeRange('1y')">1Y</button>
       </div>

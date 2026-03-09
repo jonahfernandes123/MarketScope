@@ -62,18 +62,29 @@ function showView(name) {
   document.getElementById('view-' + name).classList.add('active');
   document.querySelectorAll('.drawer-link').forEach(l => l.classList.remove('active'));
   document.getElementById('nav-' + name).classList.add('active');
+  document.querySelectorAll('.top-nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
   closeDrawer();
 }
 
 /* ── Price card state ──────────────────────────────────────────────────────── */
 let instruments = [];
+const _cardElements = {};
+
+const INSTRUMENT_GROUPS = [
+  { label: 'Crypto',  keys: ['bitcoin', 'ethereum'] },
+  { label: 'Metals',  keys: ['gold', 'silver', 'copper', 'platinum'] },
+  { label: 'Energy',  keys: ['brent', 'wti', 'henryhub', 'ttfgas'] },
+  { label: 'FX',      keys: ['eurusd', 'gbpusd', 'usdjpy', 'usdcnh'] },
+];
+let pricesSortMode = 'grouped';
 
 function renderCards(data) {
   instruments = data;
-  const grid = document.getElementById('grid');
 
-  if (grid.children.length === 0) {
-    data.forEach(inst => {
+  // Create card elements once and cache them
+  data.forEach(inst => {
+    if (!_cardElements[inst.key]) {
       const card = document.createElement('div');
       card.className = 'card';
       card.id = 'card-' + inst.key;
@@ -86,10 +97,14 @@ function renderCards(data) {
         '<div class="card-price loading" id="p-' + inst.key + '">Loading\u2026</div>' +
         '<div class="card-change"  id="c-' + inst.key + '"></div>' +
         '<div class="card-hint">Click for details \u2192</div>';
-      grid.appendChild(card);
-    });
-  }
+      _cardElements[inst.key] = card;
+    }
+  });
 
+  // Place cards in the grid (grouped or sorted)
+  renderPricesGrid();
+
+  // Update price and change text on all cards now in DOM
   data.forEach(inst => {
     const pEl = document.getElementById('p-' + inst.key);
     const cEl = document.getElementById('c-' + inst.key);
@@ -122,6 +137,73 @@ function renderCards(data) {
     });
     renderMoversPreview();
   }
+  renderPulse();
+}
+
+/* ── Prices page grid layout ───────────────────────────────────────────────── */
+function renderPricesGrid() {
+  const grid = document.getElementById('grid');
+  if (!grid || !instruments.length) return;
+  grid.innerHTML = '';
+
+  if (pricesSortMode === 'grouped') {
+    INSTRUMENT_GROUPS.forEach(group => {
+      const cards = group.keys.map(k => _cardElements[k]).filter(Boolean);
+      if (!cards.length) return;
+      const label = document.createElement('div');
+      label.className = 'section-label grid-group-label';
+      label.textContent = group.label;
+      grid.appendChild(label);
+      const sub = document.createElement('div');
+      sub.className = 'grid-group';
+      cards.forEach(c => sub.appendChild(c));
+      grid.appendChild(sub);
+    });
+  } else {
+    let sorted = [...instruments];
+    if (pricesSortMode === 'gainers') {
+      sorted.sort((a, b) => {
+        const pa = a.price != null && a.prev_price ? (a.price - a.prev_price) / a.prev_price : -999;
+        const pb = b.price != null && b.prev_price ? (b.price - b.prev_price) / b.prev_price : -999;
+        return pb - pa;
+      });
+    } else if (pricesSortMode === 'losers') {
+      sorted.sort((a, b) => {
+        const pa = a.price != null && a.prev_price ? (a.price - a.prev_price) / a.prev_price : 999;
+        const pb = b.price != null && b.prev_price ? (b.price - b.prev_price) / b.prev_price : 999;
+        return pa - pb;
+      });
+    } else if (pricesSortMode === 'alpha') {
+      sorted.sort((a, b) => a.label.localeCompare(b.label));
+    }
+    sorted.forEach(inst => {
+      if (_cardElements[inst.key]) grid.appendChild(_cardElements[inst.key]);
+    });
+  }
+}
+
+function setPricesSort(mode) {
+  pricesSortMode = mode;
+  document.querySelectorAll('.sort-tab').forEach(t => t.classList.remove('active'));
+  const tab = document.getElementById('sort-tab-' + mode);
+  if (tab) tab.classList.add('active');
+  renderPricesGrid();
+}
+
+/* ── Market Pulse strip ────────────────────────────────────────────────────── */
+function renderPulse() {
+  const el = document.getElementById('pulse-strip');
+  if (!el || !instruments.length) return;
+  el.innerHTML = instruments.map(inst => {
+    const price = fmtPrice(inst);
+    const chg   = calcChg(inst);
+    const { html: chgHtml } = fmtPct(chg);
+    return `<div class="pulse-chip" style="--accent:${inst.accent}" onclick="openCommodityModal('${inst.key}')">
+      <div class="pulse-name">${inst.icon}&ensp;${esc(inst.label)}</div>
+      <div class="pulse-price">${esc(price)}</div>
+      <div class="pulse-chg">${chgHtml}</div>
+    </div>`;
+  }).join('');
 }
 
 async function fetchPrices() {
@@ -156,6 +238,8 @@ async function loadBriefingData() {
   _driversData = drivers;
   renderNewsPreview();
   renderDriversPreview();
+  renderNewsPage();
+  renderMacroPage();
 }
 loadBriefingData();
 
@@ -163,7 +247,7 @@ loadBriefingData();
 function renderMoversPreview() {
   const el = document.getElementById('preview-movers');
   if (!el || !_moversData) return;
-  const top = _moversData.filter(r => r.price != null).slice(0, 3);
+  const top = _moversData.filter(r => r.price != null).slice(0, 5);
   if (!top.length) { el.innerHTML = '<span style="color:var(--dim)">No data yet</span>'; return; }
   el.innerHTML = '<div>' + top.map(r => {
     const pct = r.price != null && r.prev_price ? (r.price - r.prev_price) / r.prev_price * 100 : null;
@@ -177,7 +261,7 @@ function renderMoversPreview() {
 
 function renderNewsPreview() {
   const el = document.getElementById('preview-news');
-  const top = (_newsData || []).slice(0, 3);
+  const top = (_newsData || []).slice(0, 4);
   if (!top.length) { el.innerHTML = '<span style="color:var(--dim)">No articles loaded</span>'; return; }
   el.innerHTML = '<ul class="bcard-preview-list">' +
     top.map(a => `<li title="${esc(a.title)}">${esc(a.title)}</li>`).join('') + '</ul>';
@@ -189,6 +273,103 @@ function renderDriversPreview() {
   if (!top.length) { el.innerHTML = '<span style="color:var(--dim)">No headlines loaded</span>'; return; }
   el.innerHTML = '<ul class="bcard-preview-list">' +
     top.map(d => `<li title="${esc(d.title)}">${esc(d.title)}</li>`).join('') + '</ul>';
+}
+
+/* ── Full-page News renderer (sectioned by asset class) ────────────────────── */
+const _NEWS_SECTION_MAP = {
+  'Bitcoin':       'Crypto',  'Ethereum':      'Crypto',
+  'Gold':          'Metals',  'Silver':        'Metals',
+  'Copper':        'Metals',  'Platinum':      'Metals',
+  'Brent Crude':   'Energy',  'WTI Crude':     'Energy',
+  'Henry Hub Gas': 'Energy',  'TTF Gas':       'Energy',
+  'EUR / USD':     'FX',      'GBP / USD':     'FX',
+  'USD / JPY':     'FX',      'USD / CNH':     'FX',
+};
+const _NEWS_SECTION_ORDER = ['Crypto', 'Metals', 'Energy', 'FX', 'General'];
+
+function renderNewsPage() {
+  const el = document.getElementById('news-page-body');
+  if (!el) return;
+  if (!_newsData || !_newsData.length) {
+    el.innerHTML = '<p style="color:var(--muted);padding:16px 0">No articles available.</p>';
+    return;
+  }
+  const grouped = {};
+  _NEWS_SECTION_ORDER.forEach(s => { grouped[s] = []; });
+  _newsData.forEach(a => {
+    const section = _NEWS_SECTION_MAP[a.instrument] || 'General';
+    grouped[section].push(a);
+  });
+  let html = '';
+  _NEWS_SECTION_ORDER.forEach(section => {
+    const articles = grouped[section];
+    if (!articles.length) return;
+    html += `<div class="news-section-label">${section}</div>`;
+    html += '<ul class="news-list page-news-list">';
+    articles.forEach(a => {
+      html += `<li>
+        <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+        <div class="news-meta">
+          ${esc(a.instrument || '')}${a.publisher ? ' &middot; ' + esc(a.publisher) : ''}${a.published ? ' &middot; ' + esc(a.published) : ''}
+        </div>
+      </li>`;
+    });
+    html += '</ul>';
+  });
+  el.innerHTML = html;
+}
+
+/* ── Full-page Macro renderer (themed context + live headlines) ─────────────── */
+const MACRO_THEMES = [
+  {
+    title: 'Monetary Policy &amp; Rates',
+    accent: '#3b82f6',
+    text: 'Fed, ECB, and BoJ rate trajectories are the primary driver of dollar strength, risk appetite, and commodity valuations. Divergence between cutting cycles determines capital flows into metals, energy, and EM assets.',
+  },
+  {
+    title: 'Energy Transition',
+    accent: '#10b981',
+    text: 'Oil demand growth is narrowing to emerging markets as developed-world consumption peaks. Post-2022 LNG trade flows are rebalancing, while accelerating renewables buildout is reshaping long-run commodity demand.',
+  },
+  {
+    title: 'Geopolitics &amp; Trade',
+    accent: '#f59e0b',
+    text: 'US-China tariff escalation, Western sanctions on Russia, and Middle East supply risk are reshaping global commodity flows. Supply chain fragmentation creates persistent pricing dislocations across metals and energy.',
+  },
+  {
+    title: 'China &amp; Emerging Markets',
+    accent: '#8b5cf6',
+    text: 'China remains the single largest swing factor in global commodity demand. PBoC policy response to property sector stress and deflationary pressure directly drives copper, oil, and metals import volumes.',
+  },
+];
+
+function renderMacroPage() {
+  const el = document.getElementById('macro-page-body');
+  if (!el) return;
+  let html = '<div class="macro-themes">';
+  MACRO_THEMES.forEach(theme => {
+    html += `<div class="macro-theme" style="--theme-accent:${theme.accent}">
+      <div class="macro-theme-title">${theme.title}</div>
+      <div class="macro-theme-text">${theme.text}</div>
+    </div>`;
+  });
+  html += '</div>';
+  if (_driversData && _driversData.length) {
+    html += '<div class="section-label" style="margin-top:28px;margin-bottom:14px">Live Headlines</div>';
+    html += '<ul class="news-list page-news-list">';
+    _driversData.forEach(d => {
+      html += `<li>
+        <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.title)}</a>
+        <div class="news-meta">
+          ${esc(d.source || '')}${d.published ? ' &middot; ' + esc(d.published) : ''}
+        </div>
+      </li>`;
+    });
+    html += '</ul>';
+  } else {
+    html += '<p style="color:var(--muted);padding:16px 0">No headlines available.</p>';
+  }
+  el.innerHTML = html;
 }
 
 /* ── Briefing modal ────────────────────────────────────────────────────────── */
@@ -360,7 +541,11 @@ function resetChart() {
 function showChartError() {
   const ph = document.getElementById('chart-ph');
   ph.style.display = 'flex';
-  ph.innerHTML = '<span style="color:var(--red);font-size:0.8rem">Chart data unavailable</span>';
+  const inst = currentKey ? instruments.find(i => i.key === currentKey) : null;
+  const label = inst ? inst.label : '';
+  ph.innerHTML =
+    `<span style="color:var(--red);font-size:0.8rem">Chart unavailable${label ? ' \u2014 ' + esc(label) : ''}</span>` +
+    `&ensp;<button class="chart-retry-btn" onclick="changeRange(currentRange)">Retry</button>`;
 }
 
 function renderChart(hist) {
@@ -458,6 +643,77 @@ function renderArticles(articles, accent) {
   `).join('');
   area.innerHTML = `<div class="articles-grid">${cards}</div>`;
 }
+
+/* ── Network page ──────────────────────────────────────────────────────────── */
+const NETWORK_DATA = [
+  // Commodity Trading Houses
+  { name: 'Vitol Group',       category: 'Trading House', region: 'Europe', initials: 'VI', color: '#e65c00',
+    desc: 'One of the world\'s largest independent energy traders. Core focus on crude oil, petroleum products, and LNG globally.' },
+  { name: 'Glencore',          category: 'Trading House', region: 'Europe', initials: 'GL', color: '#1a73e8',
+    desc: 'Diversified commodity trader and mining company. Operates across metals, energy, and agricultural products.' },
+  { name: 'Trafigura',         category: 'Trading House', region: 'Europe', initials: 'TF', color: '#c62828',
+    desc: 'Global commodity merchant specialising in crude oil, refined products, metals, and minerals.' },
+  { name: 'Gunvor Group',      category: 'Trading House', region: 'Europe', initials: 'GU', color: '#2e7d32',
+    desc: 'Energy-focused commodity trader with significant crude oil, petroleum products, and LNG operations.' },
+  { name: 'Mercuria Energy',   category: 'Trading House', region: 'Europe', initials: 'ME', color: '#6a1b9a',
+    desc: 'Independent commodity trading house covering oil, gas, metals, and carbon markets across 50+ countries.' },
+  { name: 'Cargill',           category: 'Trading House', region: 'US',     initials: 'CA', color: '#f57f17',
+    desc: 'One of the world\'s largest privately held companies. Agricultural commodities, energy, and financial risk management.' },
+  { name: 'Louis Dreyfus',     category: 'Trading House', region: 'Europe', initials: 'LD', color: '#00695c',
+    desc: 'Global merchant and processor of agricultural goods — grains, oilseeds, sugar, cotton, and rice.' },
+  // Hedge Funds
+  { name: 'Citadel',           category: 'Hedge Fund', region: 'US',     initials: 'CI', color: '#b71c1c',
+    desc: 'Multi-strategy hedge fund and market maker. Significant commodity, macro, and equities trading operations.' },
+  { name: 'Bridgewater Associates', category: 'Hedge Fund', region: 'US', initials: 'BW', color: '#1565c0',
+    desc: 'World\'s largest macro hedge fund. All-Weather and Pure Alpha strategies with broad commodity exposure.' },
+  { name: 'D.E. Shaw',         category: 'Hedge Fund', region: 'US',     initials: 'DS', color: '#37474f',
+    desc: 'Quantitative multi-strategy fund using systematic models across commodities, equities, and macro.' },
+  { name: 'Brevan Howard',     category: 'Hedge Fund', region: 'Europe', initials: 'BH', color: '#4a148c',
+    desc: 'Global macro fund specialising in interest rates, FX, and commodity derivatives trading.' },
+  { name: 'Man Group (AHL)',   category: 'Hedge Fund', region: 'Europe', initials: 'MN', color: '#00695c',
+    desc: 'Quantitative systematic manager. AHL trend-following programme has significant commodity futures exposure.' },
+  { name: 'Millennium Management', category: 'Hedge Fund', region: 'US', initials: 'MM', color: '#e64a19',
+    desc: 'Multi-strategy fund with commodities among its core trading strategies. Over 300 investment teams globally.' },
+  { name: 'Two Sigma',         category: 'Hedge Fund', region: 'US',     initials: 'TS', color: '#1b5e20',
+    desc: 'Quantitative fund applying data science and technology to systematic trading across asset classes.' },
+];
+
+function renderNetworkPage() {
+  const el = document.getElementById('network-page-body');
+  if (!el) return;
+  const categories = [
+    { key: 'Trading House', label: 'Commodity Trading Houses' },
+    { key: 'Hedge Fund',    label: 'Hedge Funds' },
+  ];
+  let html = '';
+  categories.forEach(cat => {
+    const companies = NETWORK_DATA.filter(c => c.category === cat.key);
+    html += `<div class="section-label">${cat.label}</div>`;
+    html += '<div class="network-grid">';
+    companies.forEach(c => {
+      html += `<div class="network-card">
+        <div class="network-card-header">
+          <div class="network-logo" style="background:${c.color}">${esc(c.initials)}</div>
+          <div class="network-card-meta">
+            <div class="network-card-name">${esc(c.name)}</div>
+            <div class="network-card-tags">
+              <span class="network-tag network-tag-region">${esc(c.region)}</span>
+              <span class="network-tag">${esc(c.category)}</span>
+            </div>
+          </div>
+        </div>
+        <div class="network-card-desc">${esc(c.desc)}</div>
+        <div class="network-card-contacts">
+          <div class="network-contacts-label">Contacts &amp; Notes</div>
+          <div class="network-contacts-placeholder">No contacts added yet</div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+renderNetworkPage();
 
 /* ── Summary (macro / geopolitical / outlook) ──────────────────────────────── */
 function renderSummary(data) {

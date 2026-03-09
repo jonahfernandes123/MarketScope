@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import time
 
 import requests
 
@@ -41,6 +42,24 @@ def fetch_bitcoin():
     return price, prev_price
 
 
+def fetch_ethereum():
+    data = _get(
+        "https://api.coingecko.com/api/v3/simple/price",
+        params={"ids": "ethereum", "vs_currencies": "usd"},
+    )
+    price = float(data["ethereum"]["usd"])
+    prev_price = None
+    if YFINANCE_AVAILABLE:
+        try:
+            hist = yf.Ticker("ETH-USD").history(period="5d", interval="1d")
+            closes = hist["Close"].dropna()
+            if len(closes) >= 2:
+                prev_price = float(closes.iloc[-2])
+        except Exception:
+            pass
+    return price, prev_price
+
+
 def fetch_eurusd():
     data = _get("https://api.frankfurter.app/latest", params={"from": "EUR", "to": "USD"})
     price = float(data["rates"]["USD"])
@@ -71,11 +90,12 @@ def fetch_yf(ticker: str) -> tuple:
 # ── History fetchers (range-aware) ──────────────────────────────────────────────
 
 # Date format applied to chart labels for each time range
-_RANGE_LABEL_FMT = {"1d": "%H:%M", "1mo": "%b %d", "1y": "%b '%y"}
+_RANGE_LABEL_FMT = {"1d": "%H:%M", "1w": "%a %d", "1mo": "%b %d", "1y": "%b '%y"}
 
 # yfinance period/interval config for each time range
 _RANGE_YF_CFG = {
     "1d":  {"period": "1d",  "interval": "5m"},
+    "1w":  {"period": "5d",  "interval": "1h"},
     "1mo": {"period": "1mo", "interval": "1d"},
     "1y":  {"period": "1y",  "interval": "1wk"},
 }
@@ -93,13 +113,30 @@ def _fmt_index_labels(index, fmt: str) -> list[str]:
 
 
 def _history_bitcoin(range_param: str) -> dict:
-    days_map = {"1d": 1, "1mo": 30, "1y": 365}
+    days_map = {"1d": 1, "1w": 7, "1mo": 30, "1y": 365}
     days = days_map.get(range_param, 30)
     params: dict = {"vs_currency": "usd", "days": days}
-    if days > 1:
+    if days > 7:
         params["interval"] = "daily"
     data = _get(
         "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart",
+        params=params, timeout=15,
+    )
+    pts = data["prices"]
+    fmt = _RANGE_LABEL_FMT.get(range_param, "%b %d")
+    labels = [datetime.utcfromtimestamp(p[0] / 1000).strftime(fmt) for p in pts]
+    prices = [round(p[1], 2) for p in pts]
+    return {"labels": labels, "prices": prices}
+
+
+def _history_ethereum(range_param: str) -> dict:
+    days_map = {"1d": 1, "1w": 7, "1mo": 30, "1y": 365}
+    days = days_map.get(range_param, 30)
+    params: dict = {"vs_currency": "usd", "days": days}
+    if days > 7:
+        params["interval"] = "daily"
+    data = _get(
+        "https://api.coingecko.com/api/v3/coins/ethereum/market_chart",
         params=params, timeout=15,
     )
     pts = data["prices"]
@@ -116,10 +153,10 @@ def _history_eurusd(range_param: str) -> dict:
     1mo/1y — Frankfurter.app daily series (more reliable for FX).
     """
     fmt = _RANGE_LABEL_FMT.get(range_param, "%b %d")
-    if range_param == "1d":
-        hist = yf.Ticker("EURUSD=X").history(**_RANGE_YF_CFG["1d"])
+    if range_param in ("1d", "1w"):
+        hist = yf.Ticker("EURUSD=X").history(**_RANGE_YF_CFG[range_param])
         if hist.empty:
-            raise ValueError("No intraday EUR/USD data")
+            raise ValueError(f"No {range_param} EUR/USD data")
         return {
             "labels": _fmt_index_labels(hist.index, fmt),
             "prices": [round(float(v), 6) for v in hist["Close"]],
@@ -139,11 +176,30 @@ def _history_eurusd(range_param: str) -> dict:
 
 
 def _history_yf(ticker: str, range_param: str) -> dict:
-    """Generic yfinance price history for any ticker."""
+    """Generic yfinance price history for any ticker, with one retry on failure."""
     cfg  = _RANGE_YF_CFG.get(range_param, _RANGE_YF_CFG["1mo"])
-    hist = yf.Ticker(ticker).history(**cfg)
-    if hist.empty:
-        raise ValueError(f"No history for {ticker}")
+    hist = None
+    for attempt in range(2):
+        try:
+            hist = yf.Ticker(ticker).history(**cfg)
+            if not hist.empty:
+                break
+            if attempt == 0:
+                print(f"[WARN] Empty history for {ticker} ({range_param}), retrying…")
+                time.sleep(0.8)
+        except Exception as exc:
+            if attempt == 1:
+                raise
+            print(f"[WARN] History fetch error for {ticker} ({range_param}): {exc}, retrying…")
+            time.sleep(0.8)
+
+    # 1W fallback: try 2h interval if 1h returned empty
+    if (hist is None or hist.empty) and range_param == "1w":
+        print(f"[WARN] Falling back to 2h interval for {ticker} 1W chart")
+        hist = yf.Ticker(ticker).history(period="5d", interval="2h")
+
+    if hist is None or hist.empty:
+        raise ValueError(f"No history for {ticker} ({range_param})")
     fmt = _RANGE_LABEL_FMT.get(range_param, "%b %d")
     return {
         "labels": _fmt_index_labels(hist.index, fmt),
