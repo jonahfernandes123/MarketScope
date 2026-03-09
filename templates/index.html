@@ -38,8 +38,8 @@
     <div class="drawer-link" id="nav-macro" onclick="showView('macro')">
       <span class="drawer-link-icon">&#9670;</span> Macro
     </div>
-    <div class="drawer-link" id="nav-network" onclick="showView('network')">
-      <span class="drawer-link-icon">&#9679;</span> Network
+    <div class="drawer-link" id="nav-firms" onclick="showView('firms')">
+      <span class="drawer-link-icon">&#9679;</span> Firms
     </div>
   </div>
 </nav>
@@ -59,7 +59,7 @@
     <button class="top-nav-tab"        id="tab-markets" onclick="showView('markets')">Markets</button>
     <button class="top-nav-tab"        id="tab-news"    onclick="showView('news')">News</button>
     <button class="top-nav-tab"        id="tab-macro"   onclick="showView('macro')">Macro</button>
-    <button class="top-nav-tab"        id="tab-network" onclick="showView('network')">Network</button>
+    <button class="top-nav-tab"        id="tab-firms"   onclick="showView('firms')">Firms</button>
   </nav>
 
   <div class="header-right">
@@ -175,16 +175,15 @@
   </main>
 </div><!-- /view-macro -->
 
-<!-- ── Network View ── -->
-<div class="view" id="view-network">
+<!-- ── Firms View ── -->
+<div class="view" id="view-firms">
   <main class="page">
-    <h1 class="page-title">Network</h1>
-    <p class="page-subtitle">Commodity market participants &mdash; trading houses and hedge funds</p>
-    <div id="network-page-body">
+    <h1 class="page-title">Firms</h1>
+    <div id="firms-page-body">
       <div class="placeholder"><span class="spin"></span>Loading&hellip;</div>
     </div>
   </main>
-</div><!-- /view-network -->
+</div><!-- /view-firms -->
 
 <!-- ── Footer ── -->
 <footer class="footer">
@@ -246,6 +245,14 @@
     <div id="summary-area">
       <div class="placeholder"><span class="spin"></span>Loading analysis&hellip;</div>
     </div>
+  </div>
+</div>
+
+<!-- ── Firm Detail Modal ── -->
+<div class="overlay" id="firm-overlay">
+  <div class="modal firm-modal" id="firm-modal">
+    <button class="modal-close" id="firm-close-btn">&#x2715;&ensp;Close</button>
+    <div id="firm-modal-body"></div>
   </div>
 </div>
 

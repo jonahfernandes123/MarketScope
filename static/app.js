@@ -285,7 +285,11 @@ const _NEWS_SECTION_MAP = {
   'EUR / USD':     'FX',      'GBP / USD':     'FX',
   'USD / JPY':     'FX',      'USD / CNH':     'FX',
 };
-const _NEWS_SECTION_ORDER = ['Crypto', 'Metals', 'Energy', 'FX', 'General'];
+const _NEWS_SECTION_ORDER  = ['Energy', 'Metals', 'Crypto', 'FX', 'General'];
+const _NEWS_SECTION_ACCENTS = {
+  'Energy': '#10b981', 'Metals': '#f59e0b',
+  'Crypto': '#8b5cf6', 'FX':     '#3b82f6',
+};
 
 function renderNewsPage() {
   const el = document.getElementById('news-page-body');
@@ -304,41 +308,46 @@ function renderNewsPage() {
   _NEWS_SECTION_ORDER.forEach(section => {
     const articles = grouped[section];
     if (!articles.length) return;
-    html += `<div class="news-section-label">${section}</div>`;
-    html += '<ul class="news-list page-news-list">';
+    const accent = _NEWS_SECTION_ACCENTS[section] || '';
+    const accentStyle = accent ? ` style="--section-accent:${accent}"` : '';
+    html += `<div class="news-section-label"${accentStyle}>${esc(section)}</div>`;
+    html += `<div class="news-feed"${accentStyle}>`;
     articles.forEach(a => {
-      html += `<li>
-        <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
-        <div class="news-meta">
-          ${esc(a.instrument || '')}${a.publisher ? ' &middot; ' + esc(a.publisher) : ''}${a.published ? ' &middot; ' + esc(a.published) : ''}
-        </div>
-      </li>`;
+      const meta = [a.instrument, a.publisher, a.published].filter(Boolean).join(' · ');
+      html += `<a class="news-feed-row" href="${esc(a.url)}" target="_blank" rel="noopener">
+        <div class="news-feed-headline">${esc(a.title)}</div>
+        <div class="news-feed-meta">${esc(meta)}</div>
+      </a>`;
     });
-    html += '</ul>';
+    html += '</div>';
   });
   el.innerHTML = html;
 }
 
-/* ── Full-page Macro renderer (themed context + live headlines) ─────────────── */
+/* ── Full-page Macro renderer (themed blocks + keyword-matched headlines) ───── */
 const MACRO_THEMES = [
   {
     title: 'Monetary Policy &amp; Rates',
     accent: '#3b82f6',
+    keywords: /fed|federal reserve|\brate\b|inflation|ecb|boj|central bank|interest rate|hawkish|dovish|rate cut|rate hike/i,
     text: 'Fed, ECB, and BoJ rate trajectories are the primary driver of dollar strength, risk appetite, and commodity valuations. Divergence between cutting cycles determines capital flows into metals, energy, and EM assets.',
   },
   {
-    title: 'Energy Transition',
+    title: 'Energy &amp; Transition',
     accent: '#10b981',
+    keywords: /\boil\b|gas|lng|opec|crude|brent|wti|pipeline|\benergy\b|renewable|solar|wind|carbon|climate|fuel price/i,
     text: 'Oil demand growth is narrowing to emerging markets as developed-world consumption peaks. Post-2022 LNG trade flows are rebalancing, while accelerating renewables buildout is reshaping long-run commodity demand.',
   },
   {
     title: 'Geopolitics &amp; Trade',
     accent: '#f59e0b',
+    keywords: /tariff|trade war|sanction|russia|ukraine|middle east|iran|israel|geopolit|nato|conflict|supply chain|export ban|import ban/i,
     text: 'US-China tariff escalation, Western sanctions on Russia, and Middle East supply risk are reshaping global commodity flows. Supply chain fragmentation creates persistent pricing dislocations across metals and energy.',
   },
   {
     title: 'China &amp; Emerging Markets',
     accent: '#8b5cf6',
+    keywords: /china|pboc|chinese|yuan|renminbi|emerging market|india|brazil|copper demand|property sector|beijing|shanghai/i,
     text: 'China remains the single largest swing factor in global commodity demand. PBoC policy response to property sector stress and deflationary pressure directly drives copper, oil, and metals import volumes.',
   },
 ];
@@ -346,29 +355,50 @@ const MACRO_THEMES = [
 function renderMacroPage() {
   const el = document.getElementById('macro-page-body');
   if (!el) return;
-  let html = '<div class="macro-themes">';
-  MACRO_THEMES.forEach(theme => {
-    html += `<div class="macro-theme" style="--theme-accent:${theme.accent}">
-      <div class="macro-theme-title">${theme.title}</div>
-      <div class="macro-theme-text">${theme.text}</div>
-    </div>`;
+
+  const drivers = _driversData || [];
+
+  // Greedily assign each headline to at most one theme (first-match wins by theme order)
+  const used = new Set();
+  const themeMatches = MACRO_THEMES.map(theme => {
+    const matched = [];
+    for (const d of drivers) {
+      if (!used.has(d) && theme.keywords.test(d.title || '')) {
+        matched.push(d);
+        used.add(d);
+        if (matched.length === 3) break;
+      }
+    }
+    return matched;
+  });
+
+  // Unclaimed articles as fallback pool
+  const unclaimed = drivers.filter(d => !used.has(d));
+
+  let html = '<div class="macro-blocks">';
+  MACRO_THEMES.forEach((theme, i) => {
+    let headlines = themeMatches[i];
+    // Fallback: pull up to 2 from unclaimed pool if no theme match found
+    if (!headlines.length && unclaimed.length) {
+      headlines = unclaimed.splice(0, 2);
+    }
+    html += `<div class="macro-block" style="--theme-accent:${theme.accent}">
+      <div class="macro-block-title">${theme.title}</div>
+      <div class="macro-block-text">${theme.text}</div>`;
+    if (headlines.length) {
+      html += '<div class="macro-block-headlines">';
+      headlines.forEach(d => {
+        const meta = [d.source, d.published].filter(Boolean).join(' · ');
+        html += `<a class="macro-headline-row" href="${esc(d.url)}" target="_blank" rel="noopener">
+          <span class="macro-headline-text">${esc(d.title)}</span>
+          ${meta ? `<span class="macro-headline-meta">${esc(meta)}</span>` : ''}
+        </a>`;
+      });
+      html += '</div>';
+    }
+    html += '</div>';
   });
   html += '</div>';
-  if (_driversData && _driversData.length) {
-    html += '<div class="section-label" style="margin-top:28px;margin-bottom:14px">Live Headlines</div>';
-    html += '<ul class="news-list page-news-list">';
-    _driversData.forEach(d => {
-      html += `<li>
-        <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.title)}</a>
-        <div class="news-meta">
-          ${esc(d.source || '')}${d.published ? ' &middot; ' + esc(d.published) : ''}
-        </div>
-      </li>`;
-    });
-    html += '</ul>';
-  } else {
-    html += '<p style="color:var(--muted);padding:16px 0">No headlines available.</p>';
-  }
   el.innerHTML = html;
 }
 
@@ -525,7 +555,7 @@ document.getElementById('overlay').addEventListener('click', e => {
   if (e.target.id === 'overlay') closeCommodityModal();
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeBriefingModal(); closeCommodityModal(); }
+  if (e.key === 'Escape') { closeBriefingModal(); closeCommodityModal(); closeFirmModal(); }
 });
 
 /* ── Chart ─────────────────────────────────────────────────────────────────── */
@@ -644,42 +674,196 @@ function renderArticles(articles, accent) {
   area.innerHTML = `<div class="articles-grid">${cards}</div>`;
 }
 
-/* ── Network page ──────────────────────────────────────────────────────────── */
-const NETWORK_DATA = [
-  // Commodity Trading Houses
-  { name: 'Vitol Group',       category: 'Trading House', region: 'Europe', initials: 'VI', color: '#e65c00',
-    desc: 'One of the world\'s largest independent energy traders. Core focus on crude oil, petroleum products, and LNG globally.' },
-  { name: 'Glencore',          category: 'Trading House', region: 'Europe', initials: 'GL', color: '#1a73e8',
-    desc: 'Diversified commodity trader and mining company. Operates across metals, energy, and agricultural products.' },
-  { name: 'Trafigura',         category: 'Trading House', region: 'Europe', initials: 'TF', color: '#c62828',
-    desc: 'Global commodity merchant specialising in crude oil, refined products, metals, and minerals.' },
-  { name: 'Gunvor Group',      category: 'Trading House', region: 'Europe', initials: 'GU', color: '#2e7d32',
-    desc: 'Energy-focused commodity trader with significant crude oil, petroleum products, and LNG operations.' },
-  { name: 'Mercuria Energy',   category: 'Trading House', region: 'Europe', initials: 'ME', color: '#6a1b9a',
-    desc: 'Independent commodity trading house covering oil, gas, metals, and carbon markets across 50+ countries.' },
-  { name: 'Cargill',           category: 'Trading House', region: 'US',     initials: 'CA', color: '#f57f17',
-    desc: 'One of the world\'s largest privately held companies. Agricultural commodities, energy, and financial risk management.' },
-  { name: 'Louis Dreyfus',     category: 'Trading House', region: 'Europe', initials: 'LD', color: '#00695c',
-    desc: 'Global merchant and processor of agricultural goods — grains, oilseeds, sugar, cotton, and rice.' },
-  // Hedge Funds
-  { name: 'Citadel',           category: 'Hedge Fund', region: 'US',     initials: 'CI', color: '#b71c1c',
-    desc: 'Multi-strategy hedge fund and market maker. Significant commodity, macro, and equities trading operations.' },
-  { name: 'Bridgewater Associates', category: 'Hedge Fund', region: 'US', initials: 'BW', color: '#1565c0',
-    desc: 'World\'s largest macro hedge fund. All-Weather and Pure Alpha strategies with broad commodity exposure.' },
-  { name: 'D.E. Shaw',         category: 'Hedge Fund', region: 'US',     initials: 'DS', color: '#37474f',
-    desc: 'Quantitative multi-strategy fund using systematic models across commodities, equities, and macro.' },
-  { name: 'Brevan Howard',     category: 'Hedge Fund', region: 'Europe', initials: 'BH', color: '#4a148c',
-    desc: 'Global macro fund specialising in interest rates, FX, and commodity derivatives trading.' },
-  { name: 'Man Group (AHL)',   category: 'Hedge Fund', region: 'Europe', initials: 'MN', color: '#00695c',
-    desc: 'Quantitative systematic manager. AHL trend-following programme has significant commodity futures exposure.' },
-  { name: 'Millennium Management', category: 'Hedge Fund', region: 'US', initials: 'MM', color: '#e64a19',
-    desc: 'Multi-strategy fund with commodities among its core trading strategies. Over 300 investment teams globally.' },
-  { name: 'Two Sigma',         category: 'Hedge Fund', region: 'US',     initials: 'TS', color: '#1b5e20',
-    desc: 'Quantitative fund applying data science and technology to systematic trading across asset classes.' },
+/* ── Firms page ────────────────────────────────────────────────────────────── */
+const FIRMS_DATA = [
+  // ── Commodity Trading Houses ──────────────────────────────────────────────
+  {
+    key: 'vitol', name: 'Vitol', fullName: 'Vitol Group',
+    category: 'Trading House', region: 'Europe', hq: 'Rotterdam',
+    initials: 'VI', color: '#e65c00', website: 'vitol.com',
+    tagline: "World's largest independent energy trader",
+    overview: "Vitol is the world's largest independent energy trading company, handling over 7 million barrels of oil equivalent per day. Founded in Rotterdam in 1966, it operates across the full energy supply chain — crude oil, petroleum products, LNG, power, and carbon — across 40+ countries through a network of trading, refining, and storage assets.",
+    markets: ['Crude Oil', 'Petroleum Products', 'LNG / Natural Gas', 'Power & Renewables', 'Carbon'],
+    offices: ['Rotterdam', 'Geneva', 'Houston', 'Singapore', 'Dubai', 'London'],
+  },
+  {
+    key: 'trafigura', name: 'Trafigura', fullName: 'Trafigura Group',
+    category: 'Trading House', region: 'Europe', hq: 'Geneva',
+    initials: 'TF', color: '#c62828', website: 'trafigura.com',
+    tagline: "Global commodity merchant spanning oil, metals, and minerals",
+    overview: "Trafigura is one of the world's largest commodity trading companies, active in crude oil, refined products, metals, and minerals across 150+ countries. Founded in 1993, it has significant investments in logistics infrastructure including ports, terminals, and warehouses. Trafigura is privately held by its management and employees.",
+    markets: ['Crude Oil', 'Refined Products', 'Metals & Minerals', 'LNG', 'Bulk Commodities'],
+    offices: ['Geneva', 'Singapore', 'Houston', 'Mumbai', 'Shanghai', 'London'],
+  },
+  {
+    key: 'glencore', name: 'Glencore', fullName: 'Glencore plc',
+    category: 'Trading House', region: 'Europe', hq: 'Baar, Switzerland',
+    initials: 'GL', color: '#1565c0', website: 'glencore.com',
+    tagline: "Diversified natural resource trader, producer, and recycler",
+    overview: "Glencore is one of the world's largest diversified natural resource companies, combining a major commodity trading operation with a global portfolio of mining and processing assets. Publicly listed since 2011, Glencore produces and trades coal, copper, cobalt, nickel, zinc, oil, and agricultural products. Its physical asset base provides a structural competitive advantage in trading flows.",
+    markets: ['Copper & Cobalt', 'Coal', 'Oil & LNG', 'Nickel & Zinc', 'Agricultural Products'],
+    offices: ['Baar', 'London', 'Singapore', 'Johannesburg', 'Astana', 'Toronto'],
+  },
+  {
+    key: 'mercuria', name: 'Mercuria', fullName: 'Mercuria Energy Group',
+    category: 'Trading House', region: 'Europe', hq: 'Geneva',
+    initials: 'ME', color: '#6a1b9a', website: 'mercuria.com',
+    tagline: "Independent energy and commodity trader with global reach",
+    overview: "Mercuria is one of the world's largest independent energy and commodity trading groups. Founded in 2004, it has grown rapidly through diversification beyond crude oil into natural gas, LNG, metals, carbon, and power. Mercuria operates in 50+ countries and has made significant investments in physical assets including storage terminals, refineries, and renewables infrastructure.",
+    markets: ['Crude Oil', 'Natural Gas & LNG', 'Metals', 'Carbon & Power', 'Biofuels'],
+    offices: ['Geneva', 'Houston', 'Singapore', 'Beijing', 'London', 'Moscow'],
+  },
+  {
+    key: 'gunvor', name: 'Gunvor', fullName: 'Gunvor Group',
+    category: 'Trading House', region: 'Europe', hq: 'Geneva',
+    initials: 'GU', color: '#2e7d32', website: 'gunvorgroup.com',
+    tagline: "Energy trader specialising in crude oil, LNG, and refined products",
+    overview: "Gunvor is a major global commodities trading group focused on energy. Founded in 2000, it handles crude oil, refined petroleum products, LNG, and power across global markets. Gunvor has built a network of refining and terminal infrastructure in Europe and is active across the full energy value chain from production logistics to downstream distribution.",
+    markets: ['Crude Oil', 'LNG', 'Petroleum Products', 'Power', 'Petrochemicals'],
+    offices: ['Geneva', 'Singapore', 'Houston', 'Antwerp', 'Dubai', 'London'],
+  },
+  {
+    key: 'cargill', name: 'Cargill', fullName: 'Cargill, Incorporated',
+    category: 'Trading House', region: 'US', hq: 'Minnetonka, MN',
+    initials: 'CA', color: '#f57f17', website: 'cargill.com',
+    tagline: "Agricultural and commodity giant with energy and financial arms",
+    overview: "Cargill is one of the largest privately held corporations in the world, founded in 1865. Its core businesses span agriculture — grains, oilseeds, cotton, sugar, cocoa — but Cargill also has significant energy trading, metals, and financial risk management operations. With 160,000+ employees across 70+ countries, Cargill is a dominant force in global food and commodity supply chains.",
+    markets: ['Grains & Oilseeds', 'Sugar & Cocoa', 'Cotton', 'Energy', 'Financial Risk Management'],
+    offices: ['Minneapolis', 'Geneva', 'Singapore', 'São Paulo', 'Tokyo', 'Amsterdam'],
+  },
+  {
+    key: 'koch', name: 'Koch Supply & Trading', fullName: 'Koch Supply & Trading, LP',
+    category: 'Trading House', region: 'US', hq: 'Houston, TX',
+    initials: 'KS', color: '#37474f', website: 'kochind.com',
+    tagline: "Commodity trader and risk manager within the Koch Industries group",
+    overview: "Koch Supply & Trading is the commodity trading arm of Koch Industries, one of the largest privately held companies in the United States. It trades crude oil, petroleum products, natural gas, petrochemicals, and commodities, leveraging the broader Koch group's refining, chemical manufacturing, and distribution assets to support trading activities and risk management functions.",
+    markets: ['Crude Oil', 'Refined Products', 'Natural Gas', 'Petrochemicals', 'Commodities'],
+    offices: ['Houston', 'Rotterdam', 'Singapore', 'London', 'Calgary'],
+  },
+  {
+    key: 'ldcom', name: 'Louis Dreyfus', fullName: 'Louis Dreyfus Company',
+    category: 'Trading House', region: 'Europe', hq: 'Rotterdam',
+    initials: 'LD', color: '#00695c', website: 'ldcom.com',
+    tagline: "Agricultural commodity merchant and processor across global supply chains",
+    overview: "Louis Dreyfus Company (LDC) is a global merchant and processor of agricultural goods, operating across the food and feed value chain since 1851. LDC trades and processes grains, oilseeds, sugar, coffee, cotton, rice, and juice through a global network of processing facilities, port terminals, and logistics infrastructure. It is privately held by the Louis-Dreyfus family.",
+    markets: ['Grains & Oilseeds', 'Sugar', 'Cotton', 'Coffee & Cocoa', 'Rice & Juice'],
+    offices: ['Rotterdam', 'Geneva', 'São Paulo', 'Singapore', 'Dubai', 'Buenos Aires'],
+  },
+  {
+    key: 'castleton', name: 'Castleton Commodities', fullName: 'Castleton Commodities International',
+    category: 'Trading House', region: 'US', hq: 'Stamford, CT',
+    initials: 'CC', color: '#0277bd', website: 'castletoncommodities.com',
+    tagline: "Multi-commodity merchant with energy, metals, and shipping focus",
+    overview: "Castleton Commodities International (CCI) is a global merchant trading firm founded in 2012 by former Goldman Sachs commodity traders. CCI has rapidly built physical trading and asset positions across natural gas, LNG, crude oil, petroleum products, metals, and dry bulk shipping, operating with a principal trading model that emphasises physical asset control.",
+    markets: ['Natural Gas & LNG', 'Crude Oil & Products', 'Metals', 'Shipping', 'Power'],
+    offices: ['Stamford', 'Houston', 'Geneva', 'Singapore', 'London'],
+  },
+  {
+    key: 'hartree', name: 'Hartree Partners', fullName: 'Hartree Partners, LP',
+    category: 'Trading House', region: 'US', hq: 'New York',
+    initials: 'HP', color: '#7b1fa2', website: 'hartreepartners.com',
+    tagline: "Energy and commodity merchant with global physical trading operations",
+    overview: "Hartree Partners is a global energy and commodity merchant founded in 2001 by former Shell traders. It operates across natural gas, LNG, crude oil, petroleum products, metals, power, and dry bulk shipping. Hartree is a principal trading firm that has invested significantly in physical infrastructure assets to support its trading activities across the commodity complex.",
+    markets: ['Natural Gas & LNG', 'Crude Oil & Products', 'Power', 'Metals', 'Shipping'],
+    offices: ['New York', 'Houston', 'London', 'Singapore', 'Geneva'],
+  },
+  // ── Hedge Funds ───────────────────────────────────────────────────────────
+  {
+    key: 'citadel', name: 'Citadel', fullName: 'Citadel LLC',
+    category: 'Hedge Fund', region: 'US', hq: 'Miami, FL',
+    initials: 'CI', color: '#b71c1c', website: 'citadel.com',
+    tagline: "Multi-strategy hedge fund and global market maker",
+    overview: "Citadel is one of the world's largest and most successful alternative investment management firms, founded by Ken Griffin in 1990. It operates two distinct businesses: Citadel (hedge fund) and Citadel Securities (market maker). Commodity and macro strategies are core engines alongside equities and fixed income, with Citadel consistently ranking among the most profitable funds globally.",
+    markets: ['Commodities', 'Global Macro', 'Equities L/S', 'Fixed Income & Credit', 'Quantitative Strategies'],
+    offices: ['Miami', 'Chicago', 'New York', 'London', 'Hong Kong', 'Dubai'],
+  },
+  {
+    key: 'millennium', name: 'Millennium', fullName: 'Millennium Management LLC',
+    category: 'Hedge Fund', region: 'US', hq: 'New York',
+    initials: 'MM', color: '#e64a19', website: 'mlp.com',
+    tagline: "Multi-strategy platform with 300+ independent investment teams",
+    overview: "Millennium Management is one of the world's largest multi-strategy hedge funds, founded by Izzy Englander in 1989. Operating through a platform of 300+ independent trading teams, Millennium's strategies span equities, fixed income, commodities, and macro. Its commodity trading operations include energy, metals, and agricultural markets across physical and derivatives instruments.",
+    markets: ['Commodities', 'Equities L/S', 'Fixed Income', 'Global Macro', 'Statistical Arbitrage'],
+    offices: ['New York', 'London', 'Hong Kong', 'Singapore', 'Miami', 'Dublin'],
+  },
+  {
+    key: 'point72', name: 'Point72', fullName: 'Point72 Asset Management',
+    category: 'Hedge Fund', region: 'US', hq: 'Stamford, CT',
+    initials: 'P7', color: '#1565c0', website: 'point72.com',
+    tagline: "Global discretionary and quantitative multi-strategy fund",
+    overview: "Point72 Asset Management was founded by Steve Cohen in 2014 as the successor to SAC Capital. It manages capital through discretionary long/short equity, global macro, commodities, and systematic quantitative strategies. Point72 has significantly expanded its macro and commodities trading capabilities alongside its core equities franchise.",
+    markets: ['Equities L/S', 'Global Macro', 'Commodities', 'Quantitative Strategies', 'Venture'],
+    offices: ['Stamford', 'New York', 'London', 'Hong Kong', 'Singapore', 'Tokyo'],
+  },
+  {
+    key: 'balyasny', name: 'Balyasny', fullName: 'Balyasny Asset Management',
+    category: 'Hedge Fund', region: 'US', hq: 'Chicago',
+    initials: 'BA', color: '#4527a0', website: 'balyasny.com',
+    tagline: "Multi-strategy manager with systematic and discretionary capabilities",
+    overview: "Balyasny Asset Management is a global multi-strategy hedge fund founded by Dmitry Balyasny in 2001. The firm operates across long/short equity, global macro, and commodities strategies using both discretionary and systematic approaches. Balyasny has expanded significantly from its equity roots to build dedicated macro and commodity trading teams.",
+    markets: ['Equities L/S', 'Global Macro', 'Commodities', 'Quantitative Strategies'],
+    offices: ['Chicago', 'New York', 'London', 'Hong Kong', 'Dubai'],
+  },
+  {
+    key: 'brevan', name: 'Brevan Howard', fullName: 'Brevan Howard Asset Management',
+    category: 'Hedge Fund', region: 'Europe', hq: 'Jersey / Abu Dhabi',
+    initials: 'BH', color: '#283593', website: 'brevanhoward.com',
+    tagline: "Global macro hedge fund with rates, FX, and commodity focus",
+    overview: "Brevan Howard is one of Europe's largest hedge funds, founded in 2002 by Alan Howard and colleagues from Credit Suisse. Primarily known as a global macro fund with deep expertise in interest rates, FX, and commodity derivatives, Brevan Howard has significantly expanded its systematic trading capabilities alongside its core discretionary macro operations.",
+    markets: ['Global Macro', 'Interest Rates', 'FX', 'Commodities', 'Systematic Strategies'],
+    offices: ['Jersey', 'Abu Dhabi', 'London', 'Geneva', 'New York', 'Hong Kong'],
+  },
+  {
+    key: 'caxton', name: 'Caxton Associates', fullName: 'Caxton Associates LP',
+    category: 'Hedge Fund', region: 'US', hq: 'Princeton, NJ',
+    initials: 'CX', color: '#00695c', website: 'caxton.com',
+    tagline: "Discretionary global macro manager with a 40-year track record",
+    overview: "Caxton Associates is one of the oldest and most respected global macro hedge funds, founded by Bruce Kovner in 1983. The firm specialises in discretionary macro trading across FX, commodities, rates, and equities. Caxton is known for its rigorous fundamental research approach and has consistently operated as a principal-led, research-driven trading organisation.",
+    markets: ['Global Macro', 'FX', 'Commodities', 'Interest Rates', 'Equities'],
+    offices: ['Princeton', 'London'],
+  },
+  {
+    key: 'bluecrest', name: 'BlueCrest Capital', fullName: 'BlueCrest Capital Management',
+    category: 'Hedge Fund', region: 'Europe', hq: 'Geneva',
+    initials: 'BC', color: '#0277bd', website: 'bluecrest.com',
+    tagline: "Macro and systematic manager, now trading only proprietary capital",
+    overview: "BlueCrest Capital Management returned all outside investor capital in 2015 to trade solely as a proprietary firm. Founded by Michael Platt in 2000, BlueCrest built its reputation through global macro, systematic CTA (BlueTrend), and credit strategies. It continues to operate as a major principal trading firm in global macro and systematic markets.",
+    markets: ['Global Macro', 'Systematic / CTA', 'Credit', 'Rates', 'FX & Commodities'],
+    offices: ['Geneva', 'London', 'New York'],
+  },
+  {
+    key: 'aqr', name: 'AQR Capital Management', fullName: 'AQR Capital Management LLC',
+    category: 'Hedge Fund', region: 'US', hq: 'Greenwich, CT',
+    initials: 'AQ', color: '#00838f', website: 'aqr.com',
+    tagline: "Quantitative factor-based manager across global asset classes",
+    overview: "AQR Capital Management is one of the world's largest quantitative investment managers, founded in 1998 by Cliff Asness and colleagues from Goldman Sachs. AQR applies systematic, factor-based strategies across equities, fixed income, currencies, and commodities in both hedge fund and long-only formats. Commodity exposure is primarily through trend-following, carry, and value factor strategies in futures markets.",
+    markets: ['Quantitative / Factor', 'Commodity Futures', 'Trend-Following', 'Fixed Income', 'Equities'],
+    offices: ['Greenwich', 'New York', 'London', 'Hong Kong', 'Sydney'],
+  },
+  {
+    key: 'winton', name: 'Winton Group', fullName: 'Winton Group Ltd',
+    category: 'Hedge Fund', region: 'Europe', hq: 'London',
+    initials: 'WG', color: '#37474f', website: 'winton.com',
+    tagline: "Research-driven systematic CTA with commodity futures expertise",
+    overview: "Winton Group is a leading systematic investment manager founded by David Harding in 1997. Winton applies scientific research and statistical methods to trading systems across global futures markets, including commodities. It is one of the largest commodity trading advisors (CTAs) globally, with significant exposure to energy, metals, and agricultural futures through trend-following and diversified systematic strategies.",
+    markets: ['Systematic / CTA', 'Commodity Futures', 'Equity Futures', 'Fixed Income Futures', 'FX'],
+    offices: ['London', 'Hong Kong', 'New York'],
+  },
+  {
+    key: 'man', name: 'Man Group', fullName: 'Man Group plc',
+    category: 'Hedge Fund', region: 'Europe', hq: 'London',
+    initials: 'MN', color: '#1b5e20', website: 'man.com',
+    tagline: "Listed alternative manager with leading systematic AHL platform",
+    overview: "Man Group is one of the world's largest publicly listed alternative investment managers, with roots dating to 1783. Its primary systematic engine — Man AHL — is one of the longest-established CTAs globally, with significant commodity futures exposure through trend-following and diversified systematic strategies. Man Group also operates discretionary macro and credit strategies through Man GLG and Man FRM.",
+    markets: ['Systematic / CTA', 'Commodity Futures', 'Global Macro', 'Credit', 'Multi-Strategy'],
+    offices: ['London', 'New York', 'Hong Kong', 'Singapore', 'Sydney', 'Denver'],
+  },
 ];
 
-function renderNetworkPage() {
-  const el = document.getElementById('network-page-body');
+const _FIRMS_MAP = Object.fromEntries(FIRMS_DATA.map(f => [f.key, f]));
+
+function renderFirmsPage() {
+  const el = document.getElementById('firms-page-body');
   if (!el) return;
   const categories = [
     { key: 'Trading House', label: 'Commodity Trading Houses' },
@@ -687,33 +871,87 @@ function renderNetworkPage() {
   ];
   let html = '';
   categories.forEach(cat => {
-    const companies = NETWORK_DATA.filter(c => c.category === cat.key);
-    html += `<div class="section-label">${cat.label}</div>`;
-    html += '<div class="network-grid">';
-    companies.forEach(c => {
-      html += `<div class="network-card">
-        <div class="network-card-header">
-          <div class="network-logo" style="background:${c.color}">${esc(c.initials)}</div>
-          <div class="network-card-meta">
-            <div class="network-card-name">${esc(c.name)}</div>
-            <div class="network-card-tags">
-              <span class="network-tag network-tag-region">${esc(c.region)}</span>
-              <span class="network-tag">${esc(c.category)}</span>
+    const firms = FIRMS_DATA.filter(f => f.category === cat.key);
+    html += `<div class="page-section-heading">${cat.label}</div>`;
+    html += '<div class="firm-grid">';
+    firms.forEach(f => {
+      html += `<div class="firm-card" onclick="openFirmModal('${f.key}')">
+        <div class="firm-card-header">
+          <div class="firm-logo" style="background:${f.color}">${esc(f.initials)}</div>
+          <div class="firm-card-meta">
+            <div class="firm-card-name">${esc(f.name)}</div>
+            <div class="firm-card-tags">
+              <span class="firm-tag firm-tag-region">${esc(f.region)}</span>
+              <span class="firm-tag">${esc(f.category)}</span>
             </div>
           </div>
         </div>
-        <div class="network-card-desc">${esc(c.desc)}</div>
-        <div class="network-card-contacts">
-          <div class="network-contacts-label">Contacts &amp; Notes</div>
-          <div class="network-contacts-placeholder">No contacts added yet</div>
-        </div>
+        <div class="firm-card-tagline">${esc(f.tagline)}</div>
+        <div class="firm-card-hint">View details &rarr;</div>
       </div>`;
     });
     html += '</div>';
   });
   el.innerHTML = html;
 }
-renderNetworkPage();
+renderFirmsPage();
+
+function openFirmModal(key) {
+  const f = _FIRMS_MAP[key];
+  if (!f) return;
+  const modal = document.getElementById('firm-modal');
+  modal.style.setProperty('--modal-accent', f.color);
+  modal.style.borderTopColor = f.color;
+  document.getElementById('firm-modal-body').innerHTML = `
+    <div class="firm-modal-header">
+      <div class="firm-modal-logo" style="background:${f.color}">${esc(f.initials)}</div>
+      <div class="firm-modal-header-text">
+        <div class="firm-modal-name">${esc(f.fullName)}</div>
+        <div class="firm-modal-tags">
+          <span class="firm-tag firm-tag-region">${esc(f.region)}</span>
+          <span class="firm-tag">${esc(f.category)}</span>
+          <span class="firm-tag">${esc(f.hq)}</span>
+        </div>
+        <div class="firm-modal-tagline">${esc(f.tagline)}</div>
+      </div>
+    </div>
+    <div class="modal-divider"></div>
+    <p class="summary-overview">${esc(f.overview)}</p>
+    <div class="firm-detail-cols">
+      <div>
+        <div class="firm-detail-col-title">Focus &amp; Markets</div>
+        <ul class="firm-detail-list">${f.markets.map(m => `<li>${esc(m)}</li>`).join('')}</ul>
+      </div>
+      <div>
+        <div class="firm-detail-col-title">Offices</div>
+        <ul class="firm-detail-list">${f.offices.map(o => `<li>${esc(o)}</li>`).join('')}</ul>
+      </div>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="section-label" style="margin-bottom:14px">Recent Activity</div>
+    <div class="firm-activity-placeholder">
+      <div class="firm-placeholder-icon">&#9679;</div>
+      <div>
+        <div class="firm-placeholder-title">No recent activity loaded</div>
+        <div class="firm-placeholder-text">This section will show recent press, deals, and market activity for ${esc(f.name)}.</div>
+      </div>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="section-label" style="margin-bottom:14px">Contacts &amp; Notes</div>
+    <div class="firm-notes-placeholder">No contacts or notes added yet &mdash; contact management coming in a future update.</div>
+  `;
+  document.getElementById('firm-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeFirmModal() {
+  document.getElementById('firm-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+document.getElementById('firm-close-btn').addEventListener('click', closeFirmModal);
+document.getElementById('firm-overlay').addEventListener('click', e => {
+  if (e.target.id === 'firm-overlay') closeFirmModal();
+});
 
 /* ── Summary (macro / geopolitical / outlook) ──────────────────────────────── */
 function renderSummary(data) {
