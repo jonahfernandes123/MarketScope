@@ -67,9 +67,8 @@ def _fetch_yf_news(ticker_sym: str) -> list[dict]:
 
 # ── Google News RSS ──────────────────────────────────────────────────────────────
 
-def _fetch_context_news(key: str) -> list[dict]:
-    """Fetch live macro/geopolitical news from Google News RSS."""
-    query = CONTEXT_QUERIES.get(key, INSTRUMENT_MAP.get(key, {}).get("label", key))
+def _fetch_news_for_query(query: str) -> list[dict]:
+    """Fetch live news from Google News RSS for a raw query string."""
     query_enc = query.replace(" ", "+")
     url = f"https://news.google.com/rss/search?q={query_enc}&hl=en-US&gl=US&ceid=US:en"
     try:
@@ -109,3 +108,9 @@ def _fetch_context_news(key: str) -> list[dict]:
         return results
     except Exception:
         return []
+
+
+def _fetch_context_news(key: str) -> list[dict]:
+    """Fetch live macro/geopolitical news from Google News RSS."""
+    query = CONTEXT_QUERIES.get(key, INSTRUMENT_MAP.get(key, {}).get("label", key))
+    return _fetch_news_for_query(query)

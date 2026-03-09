@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
-<body>
+<body id="app-body">
 
 <!-- ── Side drawer backdrop ── -->
 <div class="drawer-backdrop" id="drawer-backdrop"></div>
@@ -41,6 +41,9 @@
     <div class="drawer-link" id="nav-firms" onclick="showView('firms')">
       <span class="drawer-link-icon">&#9679;</span> Firms
     </div>
+    <div class="drawer-link" id="nav-settings" onclick="showView('settings')">
+      <span class="drawer-link-icon">&#9881;</span> Settings
+    </div>
   </div>
 </nav>
 
@@ -59,7 +62,8 @@
     <button class="top-nav-tab"        id="tab-markets" onclick="showView('markets')">Markets</button>
     <button class="top-nav-tab"        id="tab-news"    onclick="showView('news')">News</button>
     <button class="top-nav-tab"        id="tab-macro"   onclick="showView('macro')">Macro</button>
-    <button class="top-nav-tab"        id="tab-firms"   onclick="showView('firms')">Firms</button>
+    <button class="top-nav-tab"        id="tab-firms"    onclick="showView('firms')">Firms</button>
+    <button class="top-nav-tab"        id="tab-settings" onclick="showView('settings')">Settings</button>
   </nav>
 
   <div class="header-right">
@@ -184,6 +188,16 @@
     </div>
   </main>
 </div><!-- /view-firms -->
+
+<!-- ── Settings View ── -->
+<div class="view" id="view-settings">
+  <main class="page">
+    <h1 class="page-title">Settings</h1>
+    <div id="settings-page-body">
+      <div class="placeholder"><span class="spin"></span>Loading&hellip;</div>
+    </div>
+  </main>
+</div><!-- /view-settings -->
 
 <!-- ── Footer ── -->
 <footer class="footer">

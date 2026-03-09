@@ -67,6 +67,59 @@ function showView(name) {
   closeDrawer();
 }
 
+/* ── Settings ──────────────────────────────────────────────────────────────── */
+const SETTINGS_KEY = 'mkt_settings';
+const SETTINGS_DEFAULTS = {
+  chartRange:          '1mo',
+  compactMode:         false,
+  accentPreset:        'default',
+  theme:               'dark',   // 'dark' | 'light' — dark is the default on first load
+  hiddenInstruments:   [],       // only affects Markets page grid — not pulse/movers/home
+};
+let _settings = { ...SETTINGS_DEFAULTS };
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) _settings = { ...SETTINGS_DEFAULTS, ...JSON.parse(raw) };
+  } catch(e) { /* ignore */ }
+  applySettings();
+}
+
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(_settings)); } catch(e) {}
+}
+
+function applySettings() {
+  const body = document.getElementById('app-body');
+  if (!body) return;
+  // Compact mode
+  body.classList.toggle('compact', !!_settings.compactMode);
+  // Light mode — only applied from saved settings; dark is the default
+  body.classList.toggle('light-mode', _settings.theme === 'light');
+  // Accent preset — remove all, then add current
+  ['accent-amber','accent-teal','accent-rose','accent-slate'].forEach(c => body.classList.remove(c));
+  if (_settings.accentPreset !== 'default') body.classList.add('accent-' + _settings.accentPreset);
+}
+loadSettings();
+
+/* ── Collapsible section toggle ────────────────────────────────────────────── */
+// Tracks which sections are open: { 'news:Energy': true, 'macro:0': true, ... }
+const _sectionOpenState = {};
+
+function toggleSection(headerEl) {
+  const section = headerEl.closest('.collapsible');
+  if (!section) return;
+  const id = section.dataset.sid;
+  const isNowOpen = !section.classList.contains('open');
+  section.classList.toggle('open', isNowOpen);
+  if (id) _sectionOpenState[id] = isNowOpen;
+}
+
+function _isSectionOpen(id, defaultOpen) {
+  return _sectionOpenState.hasOwnProperty(id) ? _sectionOpenState[id] : defaultOpen;
+}
+
 /* ── Price card state ──────────────────────────────────────────────────────── */
 let instruments = [];
 const _cardElements = {};
@@ -148,7 +201,9 @@ function renderPricesGrid() {
 
   if (pricesSortMode === 'grouped') {
     INSTRUMENT_GROUPS.forEach(group => {
-      const cards = group.keys.map(k => _cardElements[k]).filter(Boolean);
+      const cards = group.keys
+        .filter(k => !_settings.hiddenInstruments.includes(k))
+        .map(k => _cardElements[k]).filter(Boolean);
       if (!cards.length) return;
       const label = document.createElement('div');
       label.className = 'section-label grid-group-label';
@@ -177,7 +232,8 @@ function renderPricesGrid() {
       sorted.sort((a, b) => a.label.localeCompare(b.label));
     }
     sorted.forEach(inst => {
-      if (_cardElements[inst.key]) grid.appendChild(_cardElements[inst.key]);
+      if (!_settings.hiddenInstruments.includes(inst.key) && _cardElements[inst.key])
+        grid.appendChild(_cardElements[inst.key]);
     });
   }
 }
@@ -305,21 +361,44 @@ function renderNewsPage() {
     grouped[section].push(a);
   });
   let html = '';
+  let isFirst = true;
   _NEWS_SECTION_ORDER.forEach(section => {
     const articles = grouped[section];
     if (!articles.length) return;
-    const accent = _NEWS_SECTION_ACCENTS[section] || '';
-    const accentStyle = accent ? ` style="--section-accent:${accent}"` : '';
-    html += `<div class="news-section-label"${accentStyle}>${esc(section)}</div>`;
-    html += `<div class="news-feed"${accentStyle}>`;
-    articles.forEach(a => {
-      const meta = [a.instrument, a.publisher, a.published].filter(Boolean).join(' · ');
-      html += `<a class="news-feed-row" href="${esc(a.url)}" target="_blank" rel="noopener">
-        <div class="news-feed-headline">${esc(a.title)}</div>
-        <div class="news-feed-meta">${esc(meta)}</div>
-      </a>`;
-    });
-    html += '</div>';
+    const accent  = _NEWS_SECTION_ACCENTS[section] || '';
+    const sid     = 'news:' + section;
+    const isOpen  = _isSectionOpen(sid, isFirst);
+    const accentS = accent ? ` style="--section-accent:${accent}"` : '';
+    html += `<div class="collapsible${isOpen ? ' open' : ''}" data-sid="${sid}"${accentS}>`;
+    html += `<div class="collapsible-header" onclick="toggleSection(this)">
+      <span class="collapsible-title">${esc(section)}</span>
+      <span class="collapsible-chevron">&#8250;</span>
+    </div>`;
+    html += `<div class="collapsible-body">`;
+
+    // Lead card — first article gets editorial prominence
+    const lead = articles[0];
+    const leadMeta = [lead.instrument, lead.publisher, lead.published].filter(Boolean).join(' · ');
+    html += `<a class="lead-card" href="${esc(lead.url)}" target="_blank" rel="noopener">
+      <div class="lead-card-headline">${esc(lead.title)}</div>
+      <div class="lead-card-meta">${esc(leadMeta)}</div>
+    </a>`;
+
+    // Supporting headlines — remaining articles as compact rows
+    if (articles.length > 1) {
+      html += `<div class="news-feed"${accentS}>`;
+      articles.slice(1).forEach(a => {
+        const meta = [a.instrument, a.publisher, a.published].filter(Boolean).join(' · ');
+        html += `<a class="news-feed-row" href="${esc(a.url)}" target="_blank" rel="noopener">
+          <div class="news-feed-headline">${esc(a.title)}</div>
+          <div class="news-feed-meta">${esc(meta)}</div>
+        </a>`;
+      });
+      html += '</div>';
+    }
+
+    html += '</div></div>';
+    isFirst = false;
   });
   el.innerHTML = html;
 }
@@ -375,30 +454,49 @@ function renderMacroPage() {
   // Unclaimed articles as fallback pool
   const unclaimed = drivers.filter(d => !used.has(d));
 
-  let html = '<div class="macro-blocks">';
+  let html = '';
+  let isFirst = true;
   MACRO_THEMES.forEach((theme, i) => {
     let headlines = themeMatches[i];
-    // Fallback: pull up to 2 from unclaimed pool if no theme match found
     if (!headlines.length && unclaimed.length) {
       headlines = unclaimed.splice(0, 2);
     }
+    const sid    = 'macro:' + i;
+    const isOpen = _isSectionOpen(sid, isFirst);
+    html += `<div class="collapsible collapsible-macro${isOpen ? ' open' : ''}" data-sid="${sid}" style="--theme-accent:${theme.accent}">`;
+    html += `<div class="collapsible-header" onclick="toggleSection(this)">
+      <span class="collapsible-title">${theme.title}</span>
+      <span class="collapsible-chevron">&#8250;</span>
+    </div>`;
+    html += '<div class="collapsible-body">';
     html += `<div class="macro-block" style="--theme-accent:${theme.accent}">
-      <div class="macro-block-title">${theme.title}</div>
       <div class="macro-block-text">${theme.text}</div>`;
     if (headlines.length) {
       html += '<div class="macro-block-headlines">';
-      headlines.forEach(d => {
+
+      // Featured headline — first match gets lead card prominence
+      const featured = headlines[0];
+      const featMeta = [featured.source, featured.published].filter(Boolean).join(' · ');
+      html += `<a class="lead-card" href="${esc(featured.url)}" target="_blank" rel="noopener">
+        <div class="lead-card-headline">${esc(featured.title)}</div>
+        ${featMeta ? `<div class="lead-card-meta">${esc(featMeta)}</div>` : ''}
+      </a>`;
+
+      // Supporting headlines — remaining as compact rows
+      headlines.slice(1).forEach(d => {
         const meta = [d.source, d.published].filter(Boolean).join(' · ');
         html += `<a class="macro-headline-row" href="${esc(d.url)}" target="_blank" rel="noopener">
           <span class="macro-headline-text">${esc(d.title)}</span>
           ${meta ? `<span class="macro-headline-meta">${esc(meta)}</span>` : ''}
         </a>`;
       });
+
       html += '</div>';
     }
-    html += '</div>';
+    html += '</div>';  // .macro-block
+    html += '</div></div>';  // .collapsible-body + .collapsible
+    isFirst = false;
   });
-  html += '</div>';
   el.innerHTML = html;
 }
 
@@ -451,26 +549,42 @@ function buildMoversModal() {
 
 function buildNewsModal() {
   if (!_newsData || !_newsData.length) return '<p style="color:var(--muted)">No articles available.</p>';
-  return '<ul class="news-list">' + _newsData.map(a => `
-    <li>
-      <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
-      <div class="news-meta">
-        ${esc(a.instrument || '')}
-        ${a.publisher ? ' &middot; ' + esc(a.publisher) : ''}
-        ${a.published ? ' &middot; ' + esc(a.published) : ''}
-      </div>
-    </li>`).join('') + '</ul>';
+  const lead = _newsData[0];
+  const leadMeta = [lead.instrument, lead.publisher, lead.published].filter(Boolean).join(' · ');
+  let html = `<a class="lead-card" href="${esc(lead.url)}" target="_blank" rel="noopener">
+    <div class="lead-card-headline">${esc(lead.title)}</div>
+    <div class="lead-card-meta">${esc(leadMeta)}</div>
+  </a>`;
+  if (_newsData.length > 1) {
+    html += '<ul class="news-list" style="margin-top:8px">' + _newsData.slice(1).map(a => `
+      <li>
+        <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+        <div class="news-meta">
+          ${esc(a.instrument || '')}${a.publisher ? ' &middot; ' + esc(a.publisher) : ''}${a.published ? ' &middot; ' + esc(a.published) : ''}
+        </div>
+      </li>`).join('') + '</ul>';
+  }
+  return html;
 }
 
 function buildDriversModal() {
   if (!_driversData || !_driversData.length) return '<p style="color:var(--muted)">No headlines available.</p>';
-  return '<ul class="news-list">' + _driversData.map(d => `
-    <li>
-      <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.title)}</a>
-      <div class="news-meta">
-        ${esc(d.source || '')}${d.published ? ' &middot; ' + esc(d.published) : ''}
-      </div>
-    </li>`).join('') + '</ul>';
+  const lead = _driversData[0];
+  const leadMeta = [lead.source, lead.published].filter(Boolean).join(' · ');
+  let html = `<a class="lead-card" href="${esc(lead.url)}" target="_blank" rel="noopener">
+    <div class="lead-card-headline">${esc(lead.title)}</div>
+    ${leadMeta ? `<div class="lead-card-meta">${esc(leadMeta)}</div>` : ''}
+  </a>`;
+  if (_driversData.length > 1) {
+    html += '<ul class="news-list" style="margin-top:8px">' + _driversData.slice(1).map(d => `
+      <li>
+        <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.title)}</a>
+        <div class="news-meta">
+          ${esc(d.source || '')}${d.published ? ' &middot; ' + esc(d.published) : ''}
+        </div>
+      </li>`).join('') + '</ul>';
+  }
+  return html;
 }
 
 /* ── Commodity detail modal ────────────────────────────────────────────────── */
@@ -482,7 +596,7 @@ async function openCommodityModal(key) {
   const inst = instruments.find(i => i.key === key);
   if (!inst) return;
   currentKey   = key;
-  currentRange = '1mo';
+  currentRange = _settings.chartRange;
 
   document.getElementById('modal').style.setProperty('--modal-accent', inst.accent);
   document.getElementById('modal').style.borderTopColor = inst.accent;
@@ -503,7 +617,7 @@ async function openCommodityModal(key) {
   }
 
   document.querySelectorAll('.range-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.range === '1mo');
+    btn.classList.toggle('active', btn.dataset.range === currentRange);
   });
   resetChart();
   document.getElementById('articles-area').innerHTML =
@@ -515,7 +629,7 @@ async function openCommodityModal(key) {
   document.body.style.overflow = 'hidden';
 
   const [histRes, summRes] = await Promise.all([
-    fetch('/api/history/' + key + '?range=1mo'),
+    fetch('/api/history/' + key + '?range=' + currentRange),
     fetch('/api/summary/' + key),
   ]);
   if (histRes.ok) renderChart(await histRes.json());
@@ -929,19 +1043,38 @@ function openFirmModal(key) {
     </div>
     <div class="modal-divider"></div>
     <div class="section-label" style="margin-bottom:14px">Recent Activity</div>
-    <div class="firm-activity-placeholder">
-      <div class="firm-placeholder-icon">&#9679;</div>
-      <div>
-        <div class="firm-placeholder-title">No recent activity loaded</div>
-        <div class="firm-placeholder-text">This section will show recent press, deals, and market activity for ${esc(f.name)}.</div>
-      </div>
+    <div id="firm-activity-body">
+      <div class="placeholder"><span class="spin"></span>Loading&hellip;</div>
     </div>
-    <div class="modal-divider"></div>
-    <div class="section-label" style="margin-bottom:14px">Contacts &amp; Notes</div>
-    <div class="firm-notes-placeholder">No contacts or notes added yet &mdash; contact management coming in a future update.</div>
   `;
   document.getElementById('firm-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+
+  // Fetch live recent activity for this firm
+  const keyword = f.category === 'Trading House' ? 'commodity trading' : 'hedge fund';
+  const q = encodeURIComponent(f.name + ' ' + keyword);
+  fetch('/api/news/search?q=' + q)
+    .then(r => r.json())
+    .then(articles => {
+      const area = document.getElementById('firm-activity-body');
+      if (!area) return;
+      if (!articles || !articles.length) {
+        area.innerHTML = '<p class="firm-activity-none">No recent news found for ' + esc(f.name) + '.</p>';
+        return;
+      }
+      area.innerHTML = '<div class="firm-activity-feed">' +
+        articles.map(a => {
+          const meta = [a.source, a.published].filter(Boolean).join(' · ');
+          return `<a class="firm-activity-row" href="${esc(a.url)}" target="_blank" rel="noopener">
+            <div class="firm-activity-headline">${esc(a.title)}</div>
+            ${meta ? `<div class="firm-activity-meta">${esc(meta)}</div>` : ''}
+          </a>`;
+        }).join('') + '</div>';
+    })
+    .catch(() => {
+      const area = document.getElementById('firm-activity-body');
+      if (area) area.innerHTML = '<p class="firm-activity-none">Could not load recent activity.</p>';
+    });
 }
 
 function closeFirmModal() {
@@ -1002,3 +1135,172 @@ function renderSummary(data) {
 
   document.getElementById('summary-area').innerHTML = html;
 }
+
+/* ── Settings page ─────────────────────────────────────────────────────────── */
+const _ACCENT_PRESETS = [
+  { id: 'default', label: 'Default',  color: '#3b82f6' },
+  { id: 'amber',   label: 'Amber',    color: '#f59e0b' },
+  { id: 'teal',    label: 'Teal',     color: '#14b8a6' },
+  { id: 'rose',    label: 'Rose',     color: '#f43f5e' },
+  { id: 'slate',   label: 'Slate',    color: '#64748b' },
+];
+
+function renderSettingsPage() {
+  const el = document.getElementById('settings-page-body');
+  if (!el) return;
+
+  const rangeOptions = [
+    { v: '1d', l: '24H' }, { v: '1w', l: '1W' },
+    { v: '1mo', l: '1M' }, { v: '1y', l: '1Y' },
+  ];
+
+  let html = '<div class="settings-sections">';
+
+  // ── Display ──────────────────────────────────────────────────
+  html += '<div class="settings-section">';
+  html += '<div class="settings-section-title">Display</div>';
+
+  // Compact mode
+  const compactChecked = _settings.compactMode ? 'checked' : '';
+  html += `<div class="settings-row">
+    <div>
+      <div class="settings-row-label">Compact Mode</div>
+      <div class="settings-row-desc">Tighter padding and smaller cards</div>
+    </div>
+    <label class="settings-toggle">
+      <input type="checkbox" ${compactChecked} onchange="setCompact(this.checked)">
+      <div class="settings-toggle-track"></div>
+      <div class="settings-toggle-thumb"></div>
+    </label>
+  </div>`;
+
+  // Theme toggle
+  html += `<div class="settings-row">
+    <div>
+      <div class="settings-row-label">Colour Scheme</div>
+      <div class="settings-row-desc">Dark is the default on first load</div>
+    </div>
+    <div class="settings-pills">
+      <button class="settings-pill${_settings.theme !== 'light' ? ' active' : ''}" onclick="setTheme('dark')">Dark</button>
+      <button class="settings-pill${_settings.theme === 'light' ? ' active' : ''}" onclick="setTheme('light')">Light</button>
+    </div>
+  </div>`;
+
+  // Accent colour
+  const swatches = _ACCENT_PRESETS.map(p =>
+    `<div class="settings-accent-swatch${_settings.accentPreset === p.id ? ' active' : ''}"
+         style="background:${p.color}" title="${p.label}"
+         onclick="setAccentPreset('${p.id}')"></div>`
+  ).join('');
+  html += `<div class="settings-row">
+    <div>
+      <div class="settings-row-label">Accent Colour</div>
+      <div class="settings-row-desc">UI chrome and navigation highlights</div>
+    </div>
+    <div class="settings-accents">${swatches}</div>
+  </div>`;
+
+  html += '</div>'; // .settings-section
+
+  // ── Market Preferences ───────────────────────────────────────
+  html += '<div class="settings-section">';
+  html += '<div class="settings-section-title">Market Preferences</div>';
+
+  // Default chart range
+  const rangePills = rangeOptions.map(o =>
+    `<button class="settings-pill${_settings.chartRange === o.v ? ' active' : ''}"
+             onclick="setChartRange('${o.v}')">${o.l}</button>`
+  ).join('');
+  html += `<div class="settings-row">
+    <div>
+      <div class="settings-row-label">Default Chart Range</div>
+      <div class="settings-row-desc">Applied when opening instrument details</div>
+    </div>
+    <div class="settings-pills">${rangePills}</div>
+  </div>`;
+
+  html += '<div class="settings-note">Data refresh interval (${REFRESH}s) is configured server-side.</div>';
+  html += '</div>'; // .settings-section
+
+  // ── Market Visibility ────────────────────────────────────────
+  html += '<div class="settings-section">';
+  html += '<div class="settings-section-title">Market Visibility</div>';
+
+  html += '<div style="font-size:0.78rem;color:var(--muted);margin-bottom:16px;line-height:1.6">' +
+    'Choose which instruments appear on the <b>Markets page</b>. Hidden instruments are still tracked and appear in Home, pulse strip, and movers.' +
+    '</div>';
+
+  INSTRUMENT_GROUPS.forEach(group => {
+    html += `<div class="settings-inst-group">`;
+    html += `<div class="settings-inst-group-label">${esc(group.label)}</div>`;
+    html += '<div class="settings-inst-chips">';
+    group.keys.forEach(key => {
+      const inst = instruments.find(i => i.key === key);
+      const label = inst ? inst.label : key;
+      const visible = !_settings.hiddenInstruments.includes(key);
+      html += `<div class="settings-inst-chip${visible ? ' visible' : ''}" onclick="toggleInstrumentVisibility('${key}')">
+        <div class="settings-inst-chip-dot"></div>
+        <span>${esc(label)}</span>
+      </div>`;
+    });
+    html += '</div></div>';
+  });
+
+  html += '</div>'; // .settings-section (Market Visibility)
+
+  // ── Account ──────────────────────────────────────────────────
+  html += '<div class="settings-section">';
+  html += '<div class="settings-section-title">Account</div>';
+  html += `<div class="settings-row">
+    <div>
+      <div class="settings-row-label">Sign In or Create Account</div>
+      <div class="settings-row-desc">Save preferences and access personalised features</div>
+    </div>
+    <div class="settings-pills">
+      <button class="settings-pill" disabled style="opacity:0.45;cursor:default">Sign In</button>
+      <button class="settings-pill" disabled style="opacity:0.45;cursor:default">Create Account</button>
+    </div>
+  </div>`;
+  html += '<div class="settings-note">Account system coming soon.</div>';
+  html += '</div>'; // .settings-section (Account)
+
+  html += '</div>'; // .settings-sections
+  el.innerHTML = html;
+}
+
+function setCompact(on) {
+  _settings.compactMode = on;
+  saveSettings(); applySettings();
+  // re-render settings to keep toggle in sync
+  renderSettingsPage();
+}
+
+function setAccentPreset(id) {
+  _settings.accentPreset = id;
+  saveSettings(); applySettings();
+  renderSettingsPage();
+}
+
+function setChartRange(range) {
+  _settings.chartRange = range;
+  saveSettings();
+  renderSettingsPage();
+}
+
+function setTheme(t) {
+  _settings.theme = t;
+  saveSettings(); applySettings();
+  renderSettingsPage();
+}
+
+function toggleInstrumentVisibility(key) {
+  const hidden = _settings.hiddenInstruments;
+  const idx = hidden.indexOf(key);
+  if (idx === -1) hidden.push(key);
+  else hidden.splice(idx, 1);
+  saveSettings();
+  renderPricesGrid();   // update Markets grid immediately
+  renderSettingsPage(); // re-render to reflect new state
+}
+
+renderSettingsPage();

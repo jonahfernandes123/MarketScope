@@ -24,7 +24,7 @@ from flask import Flask, jsonify, redirect, render_template, request as freq
 
 from models.instruments import CONTEXT_QUERIES, INSTRUMENT_MAP, INSTRUMENTS, SUMMARIES
 from services.market_data import YFINANCE_AVAILABLE, _history_bitcoin, _history_ethereum, _history_eurusd, _history_yf
-from services.news_fetcher import _fetch_context_news, _fetch_yf_news
+from services.news_fetcher import _fetch_context_news, _fetch_news_for_query, _fetch_yf_news
 from services.price_cache import _background_loop, _cache_lock, _price_data, refresh_prices
 
 app = Flask(__name__)
@@ -169,6 +169,15 @@ def api_home_drivers():
     CONTEXT_QUERIES["__drivers__"] = _DRIVERS_QUERY
     results = _fetch_context_news("__drivers__")
     return jsonify(results)
+
+
+@app.route("/api/news/search")
+def api_news_search():
+    """Stateless Google News RSS search for an arbitrary query string."""
+    q = freq.args.get("q", "").strip()[:200]
+    if not q:
+        return jsonify([])
+    return jsonify(_fetch_news_for_query(q))
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
