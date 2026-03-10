@@ -333,6 +333,33 @@ body {
 .workspace-contact-linkedin:hover { opacity: 0.82; transform: scale(1.08); }
 .li-icon { width: 12px; height: 12px; fill: #fff; display: block; }
 
+.workspace-contact-email {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 5px;
+  background: var(--raised); color: var(--muted);
+  text-decoration: none; flex-shrink: 0;
+  border: 1px solid var(--border);
+  transition: color 0.15s, border-color 0.15s, transform 0.15s;
+}
+.workspace-contact-email:hover { color: var(--text); border-color: var(--border-hi); transform: scale(1.08); }
+.email-icon { width: 12px; height: 12px; display: block; }
+
+.workspace-contact-phone {
+  font-size: 0.75rem; color: var(--muted); margin-top: 3px;
+  letter-spacing: 0.01em;
+}
+.workspace-contact-exp {
+  display: inline-block;
+  font-size: 0.67rem; font-weight: 500;
+  color: var(--dim);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
+
 .workspace-location-groups { display: flex; flex-direction: column; gap: 18px; margin-bottom: 12px; }
 .workspace-location-group {
   display: flex; flex-direction: column; gap: 6px;

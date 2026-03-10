@@ -1679,12 +1679,15 @@ function _renderFirmWorkspace() {
           return (c.name     || '').toLowerCase().includes(_searchQ)
               || (c.title    || '').toLowerCase().includes(_searchQ)
               || (c.location || '').toLowerCase().includes(_searchQ)
+              || (c.email    || '').toLowerCase().includes(_searchQ)
+              || (c.phone    || '').toLowerCase().includes(_searchQ)
               || notes.toLowerCase().includes(_searchQ);
         })
       : allIdx;
 
     // Shared SVG assets
     const _liSvg     = `<svg class="li-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20.45 20.45h-3.554v-5.57c0-1.328-.024-3.037-1.85-3.037-1.851 0-2.134 1.446-2.134 2.94v5.667H9.358V9h3.414v1.561h.047c.475-.9 1.636-1.85 3.368-1.85 3.6 0 4.267 2.369 4.267 5.455v6.284zM5.337 7.433a2.062 2.062 0 1 1 0-4.124 2.062 2.062 0 0 1 0 4.124zM6.968 20.45H3.706V9h3.262v11.45zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>`;
+    const _emailSvg  = `<svg class="email-icon" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>`;
     const _pencilSvg = `<svg class="fw-pencil-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="currentColor"><path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zm-2.207 2.207L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>`;
     const _trashSvg  = `<svg class="fw-trash-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>`;
 
@@ -1694,13 +1697,18 @@ function _renderFirmWorkspace() {
       const liLink   = c.linkedin_url
         ? `<a class="workspace-contact-linkedin" href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" title="LinkedIn profile">${_liSvg}</a>`
         : '';
+      const emailLink = c.email
+        ? `<a class="workspace-contact-email" href="mailto:${esc(c.email)}" title="${esc(c.email)}">${_emailSvg}</a>`
+        : '';
       const editBtn   = `<button class="fw-edit-btn"   onclick="editFirmContact(${idx})"   title="Edit contact">${_pencilSvg}</button>`;
       const deleteBtn = `<button class="fw-delete-btn" onclick="deleteFirmContact(${idx})" title="Delete contact">${_trashSvg}</button>`;
+      const expLabel  = c.years_experience ? `<span class="workspace-contact-exp">${esc(String(c.years_experience))} yrs exp</span>` : '';
       return `<div class="workspace-contact-card">
         <div class="fw-card-actions">${editBtn}${deleteBtn}</div>
-        <div class="workspace-contact-name">${esc(c.name)}${liLink}</div>
-        ${c.title ? `<div class="workspace-contact-title">${esc(c.title)}</div>` : ''}
-        ${notes   ? `<div class="workspace-contact-notes">${esc(notes)}</div>` : ''}
+        <div class="workspace-contact-name">${esc(c.name)}${liLink}${emailLink}</div>
+        ${c.title ? `<div class="workspace-contact-title">${esc(c.title)}${expLabel ? `&ensp;${expLabel}` : ''}</div>` : (expLabel ? `<div class="workspace-contact-title">${expLabel}</div>` : '')}
+        ${c.phone  ? `<div class="workspace-contact-phone">${esc(c.phone)}</div>` : ''}
+        ${notes    ? `<div class="workspace-contact-notes">${esc(notes)}</div>` : ''}
         ${showLocation && c.location ? `<div class="workspace-contact-location">${esc(c.location)}</div>` : ''}
       </div>`;
     };
@@ -1775,6 +1783,18 @@ function _renderFirmWorkspace() {
       <div class="workspace-form-field">
         <label class="workspace-form-label">Location</label>
         <input class="workspace-input" id="fw-cf-location" type="text" placeholder="City or office" value="${esc(pre.location || '')}">
+      </div>
+      <div class="workspace-form-field">
+        <label class="workspace-form-label">Phone</label>
+        <input class="workspace-input" id="fw-cf-phone" type="tel" placeholder="+44 7700 900000" value="${esc(pre.phone || '')}">
+      </div>
+      <div class="workspace-form-field">
+        <label class="workspace-form-label">Email</label>
+        <input class="workspace-input" id="fw-cf-email" type="email" placeholder="name@firm.com" value="${esc(pre.email || '')}">
+      </div>
+      <div class="workspace-form-field">
+        <label class="workspace-form-label">Years of Experience</label>
+        <input class="workspace-input" id="fw-cf-exp" type="number" min="0" max="60" placeholder="e.g. 12" value="${esc(pre.years_experience != null ? String(pre.years_experience) : '')}">
       </div>
       <div class="workspace-form-field">
         <label class="workspace-form-label">LinkedIn URL</label>
@@ -1881,17 +1901,21 @@ function deleteFirmContact(idx) {
 }
 
 function saveEditedContact() {
-  const name         = (document.getElementById('fw-cf-name')?.value     || '').trim();
-  const title        = (document.getElementById('fw-cf-title')?.value    || '').trim();
-  const desc         = (document.getElementById('fw-cf-desc')?.value     || '').trim();
-  const location     = (document.getElementById('fw-cf-location')?.value || '').trim();
-  const linkedin_url = (document.getElementById('fw-cf-linkedin')?.value || '').trim();
+  const name             = (document.getElementById('fw-cf-name')?.value     || '').trim();
+  const title            = (document.getElementById('fw-cf-title')?.value    || '').trim();
+  const desc             = (document.getElementById('fw-cf-desc')?.value     || '').trim();
+  const location         = (document.getElementById('fw-cf-location')?.value || '').trim();
+  const phone            = (document.getElementById('fw-cf-phone')?.value    || '').trim();
+  const email            = (document.getElementById('fw-cf-email')?.value    || '').trim();
+  const linkedin_url     = (document.getElementById('fw-cf-linkedin')?.value || '').trim();
+  const _expRaw          = (document.getElementById('fw-cf-exp')?.value      || '').trim();
+  const years_experience = _expRaw !== '' ? parseInt(_expRaw, 10) || null : null;
   if (!name) {
     const el = document.getElementById('fw-cf-name');
     if (el) { el.focus(); el.classList.add('workspace-input-err'); }
     return;
   }
-  _fwData.contacts[_fwEditingIdx] = { name, title, notes: desc, location, linkedin_url };
+  _fwData.contacts[_fwEditingIdx] = { name, title, notes: desc, location, phone, email, years_experience, linkedin_url };
   _fwEditingIdx = null;
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
@@ -1901,17 +1925,21 @@ function saveEditedContact() {
 }
 
 function saveFirmContact() {
-  const name         = (document.getElementById('fw-cf-name')?.value     || '').trim();
-  const title        = (document.getElementById('fw-cf-title')?.value    || '').trim();
-  const desc         = (document.getElementById('fw-cf-desc')?.value     || '').trim();
-  const location     = (document.getElementById('fw-cf-location')?.value || '').trim();
-  const linkedin_url = (document.getElementById('fw-cf-linkedin')?.value || '').trim();
+  const name             = (document.getElementById('fw-cf-name')?.value     || '').trim();
+  const title            = (document.getElementById('fw-cf-title')?.value    || '').trim();
+  const desc             = (document.getElementById('fw-cf-desc')?.value     || '').trim();
+  const location         = (document.getElementById('fw-cf-location')?.value || '').trim();
+  const phone            = (document.getElementById('fw-cf-phone')?.value    || '').trim();
+  const email            = (document.getElementById('fw-cf-email')?.value    || '').trim();
+  const linkedin_url     = (document.getElementById('fw-cf-linkedin')?.value || '').trim();
+  const _expRaw          = (document.getElementById('fw-cf-exp')?.value      || '').trim();
+  const years_experience = _expRaw !== '' ? parseInt(_expRaw, 10) || null : null;
   if (!name) {
     const el = document.getElementById('fw-cf-name');
     if (el) { el.focus(); el.classList.add('workspace-input-err'); }
     return;
   }
-  _fwData.contacts.push({ name, title, notes: desc, location, linkedin_url });
+  _fwData.contacts.push({ name, title, notes: desc, location, phone, email, years_experience, linkedin_url });
   _fwAddingContact = false;
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
