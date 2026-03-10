@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# User data — contains private notes; never commit
+data/user_data.json
+
+# Environment / secrets
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/

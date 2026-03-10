@@ -649,19 +649,35 @@ function renderMacroPage() {
     return _sortByTrust(matched).slice(0, 3);
   });
 
-  // Unclaimed articles as fallback pool — fill themes with fewest matches first
-  const unclaimed = [..._sortByTrust(drivers.filter(d => !used.has(d)))];
+  // Unclaimed articles as fallback pool for themes with no matches
+  const unclaimed = _sortByTrust(drivers.filter(d => !used.has(d)));
 
-  // Priority order: theme with fewest keyword matches gets first pick from unclaimed pool
-  [0, 1, 2, 3]
-    .sort((a, b) => themeMatches[a].length - themeMatches[b].length)
-    .forEach(idx => {
-      const needed = 3 - themeMatches[idx].length;
-      if (needed > 0 && unclaimed.length) {
-        const supplement = unclaimed.splice(0, needed);
-        themeMatches[idx] = _sortByTrust([...themeMatches[idx], ...supplement]).slice(0, 3);
+  // Energy (1) and Geopolitics (2): fill to 3 headlines from unclaimed before any other supplement
+  [1, 2].forEach(idx => {
+    const needed = 3 - themeMatches[idx].length;
+    if (needed > 0 && unclaimed.length) {
+      const supplement = unclaimed.splice(0, needed);
+      themeMatches[idx] = _sortByTrust([...themeMatches[idx], ...supplement]).slice(0, 3);
+    }
+  });
+
+  // China & Global Demand (index 3) supplement: if < 2 matches, pull from unclaimed
+  // using a broad demand/commodity regex before general fallback fires.
+  const _CHINA_SUPPLEMENT_RE = /demand|commodity|commodities|growth|trade|import|export|manufacturing|industrial|pmi|gdp|economy|emerging|copper|steel|iron|alumin|global/i;
+  if (themeMatches[3].length < 2 && unclaimed.length) {
+    const supplement = [];
+    const stillUnclaimed = [];
+    for (const d of unclaimed) {
+      if (supplement.length < (2 - themeMatches[3].length) && _CHINA_SUPPLEMENT_RE.test(d.title || '')) {
+        supplement.push(d);
+      } else {
+        stillUnclaimed.push(d);
       }
-    });
+    }
+    themeMatches[3] = _sortByTrust([...themeMatches[3], ...supplement]).slice(0, 3);
+    unclaimed.length = 0;
+    stillUnclaimed.forEach(d => unclaimed.push(d));
+  }
 
   let html = '<div class="macro-card-grid">';
 
@@ -671,10 +687,6 @@ function renderMacroPage() {
     if (headlines.length < 2 && unclaimed.length) {
       const needed = 2 - headlines.length;
       headlines = _sortByTrust([...headlines, ...unclaimed.splice(0, needed)]);
-    }
-    // Last resort: if still empty but any drivers exist, use best available regardless of prior use
-    if (!headlines.length && drivers.length) {
-      headlines = _sortByTrust(drivers).slice(0, 2);
     }
     const featured  = headlines[0] || null;
     const signals   = headlines.slice(1);
@@ -1172,33 +1184,6 @@ const FEATURED_FIRMS = [
     offices: ['Jersey', 'Abu Dhabi', 'London', 'Geneva', 'New York', 'Hong Kong'],
   },
   {
-    key: 'man', name: 'Man Group', fullName: 'Man Group plc',
-    category: 'Hedge Fund', region: 'Europe', hq: 'London',
-    initials: 'MN', color: '#1b5e20', website: 'man.com',
-    tagline: "Listed alternative manager with leading systematic AHL platform",
-    overview: "Man Group is one of the world's largest publicly listed alternative investment managers, with roots dating to 1783. Its primary systematic engine — Man AHL — is one of the longest-established CTAs globally, with significant commodity futures exposure through trend-following and diversified systematic strategies. Man Group also operates discretionary macro and credit strategies through Man GLG and Man FRM.",
-    markets: ['Systematic / CTA', 'Commodity Futures', 'Global Macro', 'Credit', 'Multi-Strategy'],
-    offices: ['London', 'New York', 'Hong Kong', 'Singapore', 'Sydney', 'Denver'],
-  },
-  {
-    key: 'winton', name: 'Winton Group', fullName: 'Winton Group Ltd',
-    category: 'Hedge Fund', region: 'Europe', hq: 'London',
-    initials: 'WG', color: '#37474f', website: 'winton.com',
-    tagline: "Research-driven systematic CTA with commodity futures expertise",
-    overview: "Winton Group is a leading systematic investment manager founded by David Harding in 1997. Winton applies scientific research and statistical methods to trading systems across global futures markets, including commodities. It is one of the largest commodity trading advisors (CTAs) globally, with significant exposure to energy, metals, and agricultural futures through trend-following and diversified systematic strategies.",
-    markets: ['Systematic / CTA', 'Commodity Futures', 'Equity Futures', 'Fixed Income Futures', 'FX'],
-    offices: ['London', 'Hong Kong', 'New York'],
-  },
-  {
-    key: 'aqr', name: 'AQR Capital Management', fullName: 'AQR Capital Management LLC',
-    category: 'Hedge Fund', region: 'US', hq: 'Greenwich, CT',
-    initials: 'AQ', color: '#00838f', website: 'aqr.com',
-    tagline: "Quantitative factor-based manager across global asset classes",
-    overview: "AQR Capital Management is one of the world's largest quantitative investment managers, founded in 1998 by Cliff Asness and colleagues from Goldman Sachs. AQR applies systematic, factor-based strategies across equities, fixed income, currencies, and commodities in both hedge fund and long-only formats. Commodity exposure is primarily through trend-following, carry, and value factor strategies in futures markets.",
-    markets: ['Quantitative / Factor', 'Commodity Futures', 'Trend-Following', 'Fixed Income', 'Equities'],
-    offices: ['Greenwich', 'New York', 'London', 'Hong Kong', 'Sydney'],
-  },
-  {
     key: 'caxton', name: 'Caxton Associates', fullName: 'Caxton Associates LP',
     category: 'Hedge Fund', region: 'US', hq: 'Princeton, NJ',
     initials: 'CX', color: '#00695c', website: 'caxton.com',
@@ -1215,6 +1200,33 @@ const FEATURED_FIRMS = [
     overview: "BlueCrest Capital Management returned all outside investor capital in 2015 to trade solely as a proprietary firm. Founded by Michael Platt in 2000, BlueCrest built its reputation through global macro, systematic CTA (BlueTrend), and credit strategies. It continues to operate as a major principal trading firm in global macro and systematic markets.",
     markets: ['Global Macro', 'Systematic / CTA', 'Credit', 'Rates', 'FX & Commodities'],
     offices: ['Geneva', 'London', 'New York'],
+  },
+  {
+    key: 'aqr', name: 'AQR Capital Management', fullName: 'AQR Capital Management LLC',
+    category: 'Hedge Fund', region: 'US', hq: 'Greenwich, CT',
+    initials: 'AQ', color: '#00838f', website: 'aqr.com',
+    tagline: "Quantitative factor-based manager across global asset classes",
+    overview: "AQR Capital Management is one of the world's largest quantitative investment managers, founded in 1998 by Cliff Asness and colleagues from Goldman Sachs. AQR applies systematic, factor-based strategies across equities, fixed income, currencies, and commodities in both hedge fund and long-only formats. Commodity exposure is primarily through trend-following, carry, and value factor strategies in futures markets.",
+    markets: ['Quantitative / Factor', 'Commodity Futures', 'Trend-Following', 'Fixed Income', 'Equities'],
+    offices: ['Greenwich', 'New York', 'London', 'Hong Kong', 'Sydney'],
+  },
+  {
+    key: 'winton', name: 'Winton Group', fullName: 'Winton Group Ltd',
+    category: 'Hedge Fund', region: 'Europe', hq: 'London',
+    initials: 'WG', color: '#37474f', website: 'winton.com',
+    tagline: "Research-driven systematic CTA with commodity futures expertise",
+    overview: "Winton Group is a leading systematic investment manager founded by David Harding in 1997. Winton applies scientific research and statistical methods to trading systems across global futures markets, including commodities. It is one of the largest commodity trading advisors (CTAs) globally, with significant exposure to energy, metals, and agricultural futures through trend-following and diversified systematic strategies.",
+    markets: ['Systematic / CTA', 'Commodity Futures', 'Equity Futures', 'Fixed Income Futures', 'FX'],
+    offices: ['London', 'Hong Kong', 'New York'],
+  },
+  {
+    key: 'man', name: 'Man Group', fullName: 'Man Group plc',
+    category: 'Hedge Fund', region: 'Europe', hq: 'London',
+    initials: 'MN', color: '#1b5e20', website: 'man.com',
+    tagline: "Listed alternative manager with leading systematic AHL platform",
+    overview: "Man Group is one of the world's largest publicly listed alternative investment managers, with roots dating to 1783. Its primary systematic engine — Man AHL — is one of the longest-established CTAs globally, with significant commodity futures exposure through trend-following and diversified systematic strategies. Man Group also operates discretionary macro and credit strategies through Man GLG and Man FRM.",
+    markets: ['Systematic / CTA', 'Commodity Futures', 'Global Macro', 'Credit', 'Multi-Strategy'],
+    offices: ['London', 'New York', 'Hong Kong', 'Singapore', 'Sydney', 'Denver'],
   },
   {
     key: 'deshaw', name: 'D.E. Shaw', fullName: 'D. E. Shaw & Co., L.P.',
@@ -1538,22 +1550,20 @@ function openFirmModal(key) {
   fetch('/api/news/search?q=' + q)
     .then(r => r.json())
     .then(articles => {
-      const byDate = Array.isArray(articles)
-        ? [...articles].sort((a, b) => {
-            const ta = a.published ? new Date(a.published).getTime() : 0;
-            const tb = b.published ? new Date(b.published).getTime() : 0;
-            return tb - ta;
-          })
-        : [];
-
       const area = document.getElementById('firm-activity-body');
       if (!area) return;
-      if (!byDate.length) {
+      if (!articles || !articles.length) {
         area.innerHTML = '<p class="firm-activity-none">No recent news found for ' + esc(f.name) + '.</p>';
         return;
       }
+      // Sort strictly by date descending — newest first, no trust re-ordering
+      const sortedFinal = [...articles].sort((a, b) => {
+        const ta = a.published ? new Date(a.published).getTime() : 0;
+        const tb = b.published ? new Date(b.published).getTime() : 0;
+        return tb - ta;
+      });
       area.innerHTML = '<div class="firm-timeline">' +
-        byDate.map(a => {
+        sortedFinal.map(a => {
           const dateLabel = _relativeDate(a.published);
           return `<div class="firm-timeline-entry">
             <div class="firm-timeline-date">${dateLabel}</div>

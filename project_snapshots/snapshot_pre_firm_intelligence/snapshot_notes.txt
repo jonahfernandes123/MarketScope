@@ -1,0 +1,3 @@
+Snapshot created before implementing:
+- Firm Intelligence system
+- Macro fallback fixes

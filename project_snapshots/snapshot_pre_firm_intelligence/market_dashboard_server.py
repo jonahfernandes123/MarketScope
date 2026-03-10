@@ -347,18 +347,19 @@ def dashboard_redirect():
     return redirect("/", code=301)
 
 
-# ── Application startup ────────────────────────────────────────────────────────
-# Runs when the module is imported — works under Gunicorn and direct invocation.
-
-if not YFINANCE_AVAILABLE:
-    print("[WARN] yfinance not installed — commodity prices unavailable.")
-
-refresh_prices()
-threading.Thread(target=_background_loop, args=(REFRESH_SECONDS,), daemon=True).start()
-
-
-# ── Entry point (direct invocation only) ──────────────────────────────────────
+# ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("  MarketScope  ·  http://localhost:5000\n")
+    if not YFINANCE_AVAILABLE:
+        print("[WARN] yfinance not installed — commodity prices will fail.")
+        print("       Run:  pip install yfinance")
+
+    print(f"Fetching initial prices for {len(INSTRUMENTS)} instruments…")
+    refresh_prices()
+    print("Done. Starting background refresh thread.\n")
+
+    bg = threading.Thread(target=_background_loop, args=(REFRESH_SECONDS,), daemon=True)
+    bg.start()
+
+    print("  MarketScope.ai  ·  http://192.168.40.85:5000\n")
     app.run(debug=False, host="0.0.0.0", port=5000)
