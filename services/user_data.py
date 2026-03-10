@@ -1,21 +1,18 @@
 """
 services/user_data.py
 ---------------------
-Isolated read/write layer for per-user private workspace data.
+Per-user persistent storage backed by Postgres (production) or SQLite (local dev).
 
-All functions take `username` as their first argument and operate only on
-that user's slice of the data — no cross-user access is possible.
+Schema — single table `user_data`:
+  username  TEXT   NOT NULL
+  firm_key  TEXT   NOT NULL   (use '_password' / '_favorites' for special rows)
+  notes     TEXT
+  contacts  TEXT   (JSON array)
+  PRIMARY KEY (username, firm_key)
 
-Storage format (data/user_data.json):
-{
-  "Noah": {
-    "vitol": { "notes": "", "contacts": [] },
-    "glencore": { "notes": "", "contacts": [] }
-  }
-}
-
-To swap the backend from JSON to a database later, only this file needs
-to change — the API routes and callers remain the same.
+Special firm_key values:
+  _password  — stores password override in `notes` column
+  _favorites — stores JSON-encoded list of firm keys in `notes` column
 """
 
 from __future__ import annotations
@@ -23,108 +20,206 @@ from __future__ import annotations
 import json
 import os
 import threading
+from contextlib import contextmanager
 from typing import Any
 
-from config import USER_DATA_PATH
+import config
 
-_lock = threading.Lock()
+# ── Driver selection ──────────────────────────────────────────────────────────
+
+_DB_URL = config.DATABASE_URL
+
+if _DB_URL:
+    # Render / Heroku sometimes supply "postgres://" — psycopg2 needs "postgresql://"
+    if _DB_URL.startswith("postgres://"):
+        _DB_URL = "postgresql://" + _DB_URL[len("postgres://"):]
+    import psycopg2
+    import psycopg2.pool
+    _BACKEND = "pg"
+    _pool = psycopg2.pool.ThreadedConnectionPool(1, 10, _DB_URL)
+
+    @contextmanager
+    def _conn():
+        conn = _pool.getconn()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            _pool.putconn(conn)
+
+    def _execute(sql: str, params=()) -> list:
+        with _conn() as conn:
+            cur = conn.cursor()
+            cur.execute(sql, params)
+            try:
+                return cur.fetchall()
+            except Exception:
+                return []
+
+    _PH = "%s"
+
+else:
+    # Local dev fallback — SQLite (no extra install needed)
+    import sqlite3
+    _BACKEND = "sqlite"
+    _sqlite_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "data", "user_data.sqlite"
+    )
+    os.makedirs(os.path.dirname(_sqlite_path), exist_ok=True)
+    _sqlite_lock = threading.Lock()
+
+    @contextmanager
+    def _conn():
+        with _sqlite_lock:
+            conn = sqlite3.connect(_sqlite_path)
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+    def _execute(sql: str, params=()) -> list:
+        with _conn() as conn:
+            cur = conn.execute(sql, params)
+            try:
+                return cur.fetchall()
+            except Exception:
+                return []
+
+    _PH = "?"
+
+
+# ── Schema init ───────────────────────────────────────────────────────────────
+
+def _init_schema() -> None:
+    ddl = """
+        CREATE TABLE IF NOT EXISTS user_data (
+            username  TEXT NOT NULL,
+            firm_key  TEXT NOT NULL,
+            notes     TEXT NOT NULL DEFAULT '',
+            contacts  TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (username, firm_key)
+        )
+    """
+    with _conn() as conn:
+        if _BACKEND == "pg":
+            conn.cursor().execute(ddl)
+        else:
+            conn.execute(ddl)
+
+_init_schema()
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _load() -> dict:
-    """Read the full data file. Returns {} if missing or corrupt."""
-    if not os.path.exists(USER_DATA_PATH):
-        return {}
-    try:
-        with open(USER_DATA_PATH, "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except (json.JSONDecodeError, OSError):
-        return {}
+def _upsert(username: str, firm_key: str, notes: str, contacts: str) -> None:
+    if _BACKEND == "pg":
+        _execute(
+            f"""
+            INSERT INTO user_data (username, firm_key, notes, contacts)
+            VALUES ({_PH}, {_PH}, {_PH}, {_PH})
+            ON CONFLICT (username, firm_key) DO UPDATE
+              SET notes = EXCLUDED.notes, contacts = EXCLUDED.contacts
+            """,
+            (username, firm_key, notes, contacts),
+        )
+    else:
+        _execute(
+            f"""
+            INSERT INTO user_data (username, firm_key, notes, contacts)
+            VALUES ({_PH}, {_PH}, {_PH}, {_PH})
+            ON CONFLICT (username, firm_key) DO UPDATE
+              SET notes = excluded.notes, contacts = excluded.contacts
+            """,
+            (username, firm_key, notes, contacts),
+        )
 
 
-def _save(data: dict) -> None:
-    """Write the full data file, creating parent directories as needed."""
-    os.makedirs(os.path.dirname(USER_DATA_PATH), exist_ok=True)
-    with open(USER_DATA_PATH, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, ensure_ascii=False)
+def _get(username: str, firm_key: str) -> tuple | None:
+    rows = _execute(
+        f"SELECT notes, contacts FROM user_data WHERE username = {_PH} AND firm_key = {_PH}",
+        (username, firm_key),
+    )
+    return rows[0] if rows else None
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def get_user_firms(username: str) -> dict[str, dict]:
-    """Return all firm entries for the given user."""
-    with _lock:
-        return dict(_load().get(username, {}))
+    """Return all firm entries for the given user (excludes special _ rows)."""
+    if _BACKEND == "pg":
+        rows = _execute(
+            f"SELECT firm_key, notes, contacts FROM user_data WHERE username = {_PH} AND firm_key NOT LIKE '\\_%%' ESCAPE '\\'",
+            (username,),
+        )
+    else:
+        rows = _execute(
+            f"SELECT firm_key, notes, contacts FROM user_data WHERE username = {_PH} AND firm_key NOT LIKE '\\_%%' ESCAPE '\\'",
+            (username,),
+        )
+    result = {}
+    for firm_key, notes, contacts_json in rows:
+        try:
+            contacts = json.loads(contacts_json)
+        except (json.JSONDecodeError, TypeError):
+            contacts = []
+        result[firm_key] = {"notes": notes, "contacts": contacts}
+    return result
 
 
 def get_firm_entry(username: str, firm_key: str) -> dict[str, Any]:
-    """Return one firm's private workspace data for the user.
-
-    Always returns a valid structure even if the entry doesn't exist yet.
-    """
-    with _lock:
-        data = _load()
-    return data.get(username, {}).get(firm_key, {"notes": "", "contacts": []})
+    """Return one firm's workspace data; returns empty structure if not found."""
+    row = _get(username, firm_key)
+    if not row:
+        return {"notes": "", "contacts": []}
+    notes, contacts_json = row
+    try:
+        contacts = json.loads(contacts_json)
+    except (json.JSONDecodeError, TypeError):
+        contacts = []
+    return {"notes": notes, "contacts": contacts}
 
 
 def save_firm_entry(username: str, firm_key: str, entry: dict[str, Any]) -> None:
-    """Write one firm's private workspace data for the user.
-
-    Only 'notes' (str) and 'contacts' (list) are persisted; unknown keys
-    are dropped to keep the file clean.
-    """
-    with _lock:
-        data = _load()
-        if username not in data:
-            data[username] = {}
-        data[username][firm_key] = {
-            "notes":    str(entry.get("notes", "")),
-            "contacts": list(entry.get("contacts", [])),
-        }
-        _save(data)
+    """Write one firm's workspace data for the user."""
+    notes    = str(entry.get("notes", ""))
+    contacts = json.dumps(list(entry.get("contacts", [])), ensure_ascii=False)
+    _upsert(username, firm_key, notes, contacts)
 
 
 def get_user_password(username: str) -> str | None:
-    """Return the stored password override for the user, or None if unchanged."""
-    with _lock:
-        return _load().get(username, {}).get("_password")
+    """Return the stored password override, or None if unchanged."""
+    row = _get(username, "_password")
+    return row[0] if row else None
 
 
 def save_user_password(username: str, password: str) -> None:
-    """Persist a new password for the user, overriding the config default."""
-    with _lock:
-        data = _load()
-        if username not in data:
-            data[username] = {}
-        data[username]["_password"] = password
-        _save(data)
+    """Persist a new password for the user."""
+    _upsert(username, "_password", password, "[]")
 
 
 def get_favorite_firms(username: str) -> list[str]:
     """Return the user's list of favorited firm keys."""
-    with _lock:
-        return list(_load().get(username, {}).get("_favorite_firms", []))
+    row = _get(username, "_favorites")
+    if not row:
+        return []
+    try:
+        return json.loads(row[0])
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 
 def save_favorite_firms(username: str, keys: list[str]) -> None:
     """Persist the user's list of favorited firm keys."""
-    with _lock:
-        data = _load()
-        if username not in data:
-            data[username] = {}
-        data[username]["_favorite_firms"] = [str(k) for k in keys]
-        _save(data)
+    _upsert(username, "_favorites", json.dumps([str(k) for k in keys], ensure_ascii=False), "[]")
 
 
 def ensure_user_initialized(username: str) -> None:
-    """Create an empty top-level entry for the user if one doesn't exist.
-
-    Called at login so the JSON file always has a record for every user
-    who has logged in, even before they create any notes.
-    """
-    with _lock:
-        data = _load()
-        if username not in data:
-            data[username] = {}
-            _save(data)
+    """No-op — rows are created on demand."""
+    pass

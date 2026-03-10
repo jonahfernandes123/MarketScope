@@ -10,8 +10,8 @@ DEPLOYMENT CHECKLIST
                     If absent, the server refuses to start in production mode.
   DASHBOARD_USERS — Optional. Override credentials via JSON env var.
                     e.g.  DASHBOARD_USERS='{"Noah": "password123"}'
-  USER_DATA_PATH  — Optional. Absolute path to the user_data.json file.
-                    Must point to a persistent volume in cloud deployments.
+  DATABASE_URL    — REQUIRED in production. Postgres connection string.
+                    e.g.  postgres://user:pass@host:5432/dbname
 """
 
 from __future__ import annotations
@@ -66,10 +66,7 @@ else:
     }
 
 
-# ── Per-user data file ────────────────────────────────────────────────────────
-# In cloud deployments, set USER_DATA_PATH to a path on a persistent volume.
-# e.g.  USER_DATA_PATH=/data/user_data.json
-USER_DATA_PATH: str = os.environ.get(
-    "USER_DATA_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "user_data.json"),
-)
+# ── Database URL ──────────────────────────────────────────────────────────────
+# In production (Render, Heroku, etc.) this is set automatically.
+# For local dev without Postgres, leave unset — a SQLite fallback is used.
+DATABASE_URL: str = os.environ.get("DATABASE_URL", "").strip()

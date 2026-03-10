@@ -326,6 +326,8 @@ let _moversData       = null;
 let _newsData         = null;
 let _driversData      = null;
 let _powerMarketsNews = null;  // null = not yet fetched; [] = fetched, empty
+let _newsLastUpdated    = null;
+let _macroLastUpdated   = null;
 
 // Sort instruments by absolute change for the current range mode and re-render movers
 function _rebuildMovers() {
@@ -380,6 +382,10 @@ async function loadBriefingData() {
   ]);
   _newsData    = news;
   _driversData = drivers;
+  _newsLastUpdated  = new Date();
+  _macroLastUpdated = new Date();
+  const _homeUpdEl = document.getElementById('home-updated-line');
+  if (_homeUpdEl) _homeUpdEl.textContent = _fmtUpdated(_newsLastUpdated);
   renderNewsPreview();
   renderDriversPreview();
   renderNewsPage();
@@ -509,6 +515,8 @@ function renderNewsPage() {
     el.innerHTML = '<p style="color:var(--muted);padding:24px 0">No articles available.</p>';
     return;
   }
+  const _newsUpdLine = _newsLastUpdated
+    ? `<div class="page-updated-line">${_fmtUpdated(_newsLastUpdated)}</div>` : '';
 
   // Group articles by section
   const grouped = {};
@@ -584,7 +592,7 @@ function renderNewsPage() {
   });
 
   html += '</div>';  // .news-dashboard
-  el.innerHTML = html;
+  el.innerHTML = _newsUpdLine + html;
 }
 
 /* ── Macro page — always-visible briefing card grid ─────────────────────────── */
@@ -663,6 +671,8 @@ function renderMacroPage() {
       }
     });
 
+  const _macroUpdLine = _macroLastUpdated
+    ? `<div class="page-updated-line">${_fmtUpdated(_macroLastUpdated)}</div>` : '';
   let html = '<div class="macro-card-grid">';
 
   MACRO_THEMES.forEach((theme, i) => {
@@ -724,7 +734,7 @@ function renderMacroPage() {
   });
 
   html += '</div>';  // .macro-card-grid
-  el.innerHTML = html;
+  el.innerHTML = _macroUpdLine + html;
 }
 
 /* ── Briefing modal ────────────────────────────────────────────────────────── */
@@ -1548,8 +1558,9 @@ function openFirmModal(key) {
 
       const area = document.getElementById('firm-activity-body');
       if (!area) return;
+      const _actTs = `<div class="page-updated-line" style="margin-top:10px;margin-bottom:0">${_fmtUpdated(new Date())}</div>`;
       if (!byDate.length) {
-        area.innerHTML = '<p class="firm-activity-none">No recent news found for ' + esc(f.name) + '.</p>';
+        area.innerHTML = '<p class="firm-activity-none">No recent news found for ' + esc(f.name) + '.</p>' + _actTs;
         return;
       }
       area.innerHTML = '<div class="firm-timeline">' +
@@ -1562,7 +1573,7 @@ function openFirmModal(key) {
               ${a.source ? `<div class="firm-timeline-meta">${esc(a.source)}</div>` : ''}
             </div>
           </div>`;
-        }).join('') + '</div>';
+        }).join('') + '</div>' + _actTs;
     })
     .catch(() => {
       const area = document.getElementById('firm-activity-body');
@@ -1604,6 +1615,13 @@ function _relativeDate(dateStr) {
   if (diffH < 24) return diffH + 'h ago';
   if (diffD < 7)  return diffD + 'd ago';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function _fmtUpdated(d) {
+  if (!d) return '';
+  const h = String(d.getUTCHours()).padStart(2, '0');
+  const m = String(d.getUTCMinutes()).padStart(2, '0');
+  return `Last updated ${h}:${m} UTC`;
 }
 
 /* ── Firm workspace ──────────────────────────────────────────────────────────── */

@@ -137,7 +137,7 @@ body {
   position: sticky; top: 0; z-index: 50;
   gap: 12px;
 }
-.header-left { display: flex; align-items: center; gap: 10px; }
+.header-left { display: flex; align-items: center; gap: 8px; }
 .header-logo {
   width: 28px; height: 28px;
   background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
@@ -422,7 +422,12 @@ body {
   font-size: 1.55rem; font-weight: 700; letter-spacing: -0.03em;
   margin-bottom: 4px;
 }
-.page-subtitle { font-size: 0.82rem; color: var(--muted); margin-bottom: 32px; }
+.page-subtitle { font-size: 0.82rem; color: var(--muted); margin-bottom: 8px; }
+.page-updated-line {
+  font-size: 0.7rem; color: var(--dim);
+  margin-bottom: 28px;
+  letter-spacing: 0.01em;
+}
 .section-label {
   font-size: 0.62rem; font-weight: 600;
   letter-spacing: 0.15em; text-transform: uppercase;
