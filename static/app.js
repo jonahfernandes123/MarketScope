@@ -96,6 +96,11 @@ function showView(name) {
   document.querySelectorAll('.top-nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   closeDrawer();
+  // Clear firms search bar value when switching to firms view so stale text doesn't persist
+  if (name === 'firms') {
+    const fsEl = document.getElementById('firms-search');
+    if (fsEl && fsEl.value) { fsEl.value = ''; setFirmsSearch(''); }
+  }
 }
 
 /* ── Settings ──────────────────────────────────────────────────────────────── */
@@ -1670,20 +1675,12 @@ function renderFirmsPage() {
     let html = '';
 
     if (_firmsCategoryFilter) {
-      // Focused category view — show ALL firms of that category
+      // Focused category view — show ALL firms of that category (no favorites section)
       const catLabels = {
         'Trading House': 'All Commodity Trading Houses',
         'Hedge Fund':    'All Hedge Funds',
         'Bank':          'All Banks',
       };
-      const favFirms = _favoriteFirms.map(k => _FIRMS_MAP[k]).filter(Boolean)
-        .filter(f => f.category === _firmsCategoryFilter);
-      if (favFirms.length) {
-        html += `<div class="page-section-heading">Your Favorites</div>`;
-        html += '<div class="firm-grid">';
-        favFirms.forEach(f => { html += _firmCardHtml(f); });
-        html += '</div>';
-      }
       const firms = ALL_FIRMS.filter(f => f.category === _firmsCategoryFilter);
       html += `<div class="page-section-heading">${catLabels[_firmsCategoryFilter] || _firmsCategoryFilter}</div>`;
       html += '<div class="firm-grid">';
@@ -1821,6 +1818,7 @@ let _fwData          = { notes: '', contacts: [] };
 let _fwAddingContact = false;
 let _fwEditingIdx    = null;   // null = not editing; integer = index in _fwData.contacts
 let _fwAddingNoteIdx = null;   // null = not adding note; integer = contact index receiving new note
+let _fwEditingNote   = null;   // null or { ci: contactIdx, ni: noteIdx } for inline note edit
 let _fwContactSort   = 'name';
 let _fwSearchQuery   = '';
 
@@ -1834,6 +1832,7 @@ function openFirmModal(key) {
   _fwAddingContact = false;
   _fwEditingIdx    = null;
   _fwAddingNoteIdx = null;
+  _fwEditingNote   = null;
   _fwContactSort   = 'name';
   _fwSearchQuery   = '';
 
@@ -1924,6 +1923,17 @@ function _relativeDate(dateStr) {
   if (diffH < 24) return diffH + 'h ago';
   if (diffD < 7)  return diffD + 'd ago';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Absolute date/time format for stored note timestamps — e.g. "11 Mar 2026, 14:32"
+function _fmtNoteDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d)) return String(isoStr);
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${h}:${m}`;
 }
 
 function _fmtUpdated(d) {
@@ -2021,15 +2031,30 @@ function _renderFirmWorkspace() {
       let noteHistoryHtml = '';
       if (noteHistory.length || legacyNote) {
         noteHistoryHtml += '<div class="contact-note-history">';
-        // Newest first
-        [...noteHistory].reverse().forEach(entry => {
-          const ts = entry.ts ? _relativeDate(entry.ts) : '';
-          noteHistoryHtml += `<div class="contact-note-entry">
-            ${ts ? `<span class="contact-note-ts">${esc(ts)}</span>` : ''}
-            <span class="contact-note-text">${esc(entry.text || '')}</span>
-          </div>`;
+        // Render newest-first; preserve original index (ni) for edit targeting
+        noteHistory.map((entry, ni) => ({ entry, ni })).reverse().forEach(({ entry, ni }) => {
+          const ts = entry.ts ? _fmtNoteDate(entry.ts) : '';
+          const isEditingThis = _fwEditingNote && _fwEditingNote.ci === idx && _fwEditingNote.ni === ni;
+          if (isEditingThis) {
+            noteHistoryHtml += `<div class="contact-note-entry contact-note-editing">
+              ${ts ? `<div class="contact-note-entry-header"><span class="contact-note-ts">${esc(ts)}</span></div>` : ''}
+              <textarea class="workspace-input contact-addnote-textarea" id="fw-editnote-${idx}-${ni}" rows="3">${esc(entry.text || '')}</textarea>
+              <div class="contact-addnote-actions">
+                <button class="workspace-btn-primary" onclick="saveEditedNote(${idx},${ni})">Save</button>
+                <button class="workspace-btn-ghost"   onclick="cancelEditNote()">Cancel</button>
+              </div>
+            </div>`;
+          } else {
+            noteHistoryHtml += `<div class="contact-note-entry">
+              <div class="contact-note-entry-header">
+                ${ts ? `<span class="contact-note-ts">${esc(ts)}</span>` : ''}
+                <button class="contact-note-edit-btn" onclick="startEditNote(${idx},${ni})" title="Edit note">${_pencilSvg}</button>
+              </div>
+              <span class="contact-note-text">${esc(entry.text || '')}</span>
+            </div>`;
+          }
         });
-        // Legacy single-string note shown only when no structured history
+        // Legacy single-string note shown only when no structured history exists
         if (legacyNote && !noteHistory.length) {
           noteHistoryHtml += `<div class="contact-note-entry contact-note-legacy">
             <span class="contact-note-ts">note</span>
@@ -2214,6 +2239,7 @@ function showFirmContactForm() {
   _fwAddingContact = true;
   _fwEditingIdx    = null;
   _fwAddingNoteIdx = null;
+  _fwEditingNote   = null;
   _renderFirmWorkspace();
 }
 
@@ -2225,8 +2251,9 @@ function hideFirmContactForm() {
 
 function editFirmContact(idx) {
   _syncFwNotes();
-  _fwAddingContact = false;   // mutually exclusive with add
+  _fwAddingContact = false;
   _fwAddingNoteIdx = null;
+  _fwEditingNote   = null;
   _fwEditingIdx    = idx;
   _renderFirmWorkspace();
 }
@@ -2235,6 +2262,7 @@ function cancelEditContact() {
   _syncFwNotes();
   _fwEditingIdx    = null;
   _fwAddingNoteIdx = null;
+  _fwEditingNote   = null;
   _renderFirmWorkspace();
 }
 
@@ -2246,6 +2274,8 @@ function deleteFirmContact(idx) {
   else if (_fwEditingIdx !== null && _fwEditingIdx > idx) _fwEditingIdx--;
   if (_fwAddingNoteIdx === idx) _fwAddingNoteIdx = null;
   else if (_fwAddingNoteIdx !== null && _fwAddingNoteIdx > idx) _fwAddingNoteIdx--;
+  if (_fwEditingNote && _fwEditingNote.ci === idx) _fwEditingNote = null;
+  else if (_fwEditingNote && _fwEditingNote.ci > idx) _fwEditingNote = { ..._fwEditingNote, ci: _fwEditingNote.ci - 1 };
   _contactsIndex[_fwKey] = _fwData.contacts;
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
@@ -2324,6 +2354,7 @@ function setFwSearch(val) {
 function startAddNote(idx) {
   _syncFwNotes();
   _fwAddingNoteIdx = idx;
+  _fwEditingNote   = null;
   _renderFirmWorkspace();
   setTimeout(() => {
     const ta = document.getElementById('fw-addnote-' + idx);
@@ -2334,6 +2365,39 @@ function startAddNote(idx) {
 function cancelAddNote() {
   _fwAddingNoteIdx = null;
   _renderFirmWorkspace();
+}
+
+function startEditNote(ci, ni) {
+  _syncFwNotes();
+  _fwEditingNote   = { ci, ni };
+  _fwAddingNoteIdx = null;
+  _renderFirmWorkspace();
+  setTimeout(() => {
+    const ta = document.getElementById(`fw-editnote-${ci}-${ni}`);
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }, 30);
+}
+
+function cancelEditNote() {
+  _fwEditingNote = null;
+  _renderFirmWorkspace();
+}
+
+function saveEditedNote(ci, ni) {
+  const ta = document.getElementById(`fw-editnote-${ci}-${ni}`);
+  const text = (ta?.value || '').trim();
+  if (!text) { if (ta) ta.focus(); return; }
+  _syncFwNotes();
+  const contact = _fwData.contacts[ci];
+  if (!Array.isArray(contact.note_history) || !contact.note_history[ni]) return;
+  contact.note_history[ni] = { ...contact.note_history[ni], text };
+  _fwEditingNote = null;
+  _contactsIndex[_fwKey] = _fwData.contacts;
+  apiFetch('/api/workspace/' + _fwKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(_fwData),
+  }).then(() => _renderFirmWorkspace());
 }
 
 function saveContactNote(idx) {

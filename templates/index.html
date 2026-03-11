@@ -217,8 +217,9 @@
   <main class="page">
     <h1 class="page-title">Firms</h1>
     <div class="firms-search-wrap">
-      <input class="firms-search-input" id="firms-search" type="text"
+      <input class="firms-search-input" id="firms-search" type="search"
              placeholder="Search firms &amp; contacts&hellip;"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
              oninput="setFirmsSearch(this.value)">
       <div class="firms-filter-pills" id="firms-filter-pills">
         <button class="firms-filter-pill" id="fpill-Trading House" onclick="toggleFirmCategoryFilter('Trading House')">Trading Houses</button>

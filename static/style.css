@@ -1222,16 +1222,28 @@ body {
 .contact-note-entry {
   display: flex; flex-direction: column; gap: 2px;
 }
-.contact-note-ts {
-  font-size: 0.63rem; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--dim);
+.contact-note-entry-header {
+  display: flex; align-items: center; gap: 6px;
 }
+.contact-note-ts {
+  font-size: 0.63rem; font-weight: 500;
+  color: var(--dim); flex: 1;
+}
+.contact-note-edit-btn {
+  flex-shrink: 0; background: none; border: none; cursor: pointer;
+  color: var(--dim); padding: 1px 2px; border-radius: 4px;
+  display: flex; align-items: center; opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.contact-note-edit-btn svg { width: 11px; height: 11px; }
+.contact-note-entry:hover .contact-note-edit-btn { opacity: 1; }
+.contact-note-edit-btn:hover { color: var(--muted); }
 .contact-note-text {
   font-size: 0.78rem; color: var(--muted); line-height: 1.5;
   white-space: pre-wrap;
 }
-.contact-note-legacy .contact-note-ts { color: var(--dim); font-style: italic; }
+.contact-note-legacy .contact-note-ts { font-style: italic; }
+.contact-note-editing { background: var(--raised); border-radius: 6px; padding: 6px 8px; }
 
 /* ── Add-note form (inline per contact) ─────────────────────── */
 .contact-addnote-form {
