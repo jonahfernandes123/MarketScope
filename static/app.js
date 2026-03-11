@@ -228,10 +228,11 @@ function renderCards(data) {
     if (!pEl) return;
 
     if (!inst.price && inst.error) {
+      const is429 = inst.error.toLowerCase().includes('429') || inst.error.toLowerCase().includes('too many');
       pEl.className = 'card-price err';
-      pEl.textContent = 'Unavailable';
+      pEl.textContent = is429 ? 'Updating\u2026' : 'Unavailable';
       const cEl = document.getElementById('c-' + inst.key);
-      if (cEl) cEl.innerHTML = '<span class="neu" style="font-size:0.6rem">' + esc(inst.error.substring(0, 45)) + '</span>';
+      if (cEl) cEl.innerHTML = '<span class="neu" style="font-size:0.6rem">' + esc(is429 ? 'Rate limited \u2014 retrying\u2026' : inst.error.substring(0, 45)) + '</span>';
       return;
     }
     pEl.className = 'card-price';

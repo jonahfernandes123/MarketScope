@@ -1,9 +1,49 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import threading
 import time
 
 import requests
+
+
+# ── CoinGecko shared cache ───────────────────────────────────────────────────────
+# A single shared cache for all CoinGecko simple/price calls so that concurrent
+# threads (BTC + ETH fetching simultaneously) never fire more than one upstream
+# request per TTL window.
+
+_CG_CACHE_TTL   = 28          # seconds — slightly shorter than the 30 s refresh cycle
+_cg_lock        = threading.Lock()
+_cg_cache: dict = {}          # key → {"data": ..., "ts": float}
+
+
+def _cg_get(url: str, params: dict | None = None, timeout: int = 12):
+    """GET a CoinGecko endpoint with an in-process TTL cache.
+
+    On 429 / any temporary error: returns the last cached response if available,
+    otherwise re-raises so the caller can fall back to stale price_cache values.
+    """
+    cache_key = url + str(sorted((params or {}).items()))
+    with _cg_lock:
+        entry = _cg_cache.get(cache_key)
+        if entry and (time.monotonic() - entry["ts"]) < _CG_CACHE_TTL:
+            return entry["data"]
+
+    try:
+        r = requests.get(url, params=params, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as exc:
+        # On any failure, serve stale cache if available; otherwise propagate.
+        with _cg_lock:
+            entry = _cg_cache.get(cache_key)
+        if entry:
+            return entry["data"]
+        raise
+
+    with _cg_lock:
+        _cg_cache[cache_key] = {"data": data, "ts": time.monotonic()}
+    return data
 
 
 # ── Multi-period change calculation ─────────────────────────────────────────────
@@ -69,11 +109,16 @@ def _get(url, params=None, timeout=12):
 
 # ── Live price fetchers ──────────────────────────────────────────────────────────
 
-def fetch_bitcoin():
-    data = _get(
+def _fetch_crypto_prices() -> dict:
+    """Fetch BTC + ETH spot prices in a single CoinGecko request (cached)."""
+    return _cg_get(
         "https://api.coingecko.com/api/v3/simple/price",
-        params={"ids": "bitcoin", "vs_currencies": "usd"},
+        params={"ids": "bitcoin,ethereum", "vs_currencies": "usd"},
     )
+
+
+def fetch_bitcoin():
+    data  = _fetch_crypto_prices()
     price = float(data["bitcoin"]["usd"])
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
@@ -90,10 +135,7 @@ def fetch_bitcoin():
 
 
 def fetch_ethereum():
-    data = _get(
-        "https://api.coingecko.com/api/v3/simple/price",
-        params={"ids": "ethereum", "vs_currencies": "usd"},
-    )
+    data  = _fetch_crypto_prices()
     price = float(data["ethereum"]["usd"])
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
@@ -172,7 +214,7 @@ def _history_bitcoin(range_param: str) -> dict:
     params: dict = {"vs_currency": "usd", "days": days}
     if days > 7:
         params["interval"] = "daily"
-    data = _get(
+    data = _cg_get(
         "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart",
         params=params, timeout=15,
     )
@@ -189,7 +231,7 @@ def _history_ethereum(range_param: str) -> dict:
     params: dict = {"vs_currency": "usd", "days": days}
     if days > 7:
         params["interval"] = "daily"
-    data = _get(
+    data = _cg_get(
         "https://api.coingecko.com/api/v3/coins/ethereum/market_chart",
         params=params, timeout=15,
     )
