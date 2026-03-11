@@ -2026,17 +2026,21 @@ function _renderContactView() {
     if (c.location) html += `<div class="workspace-contact-location">${esc(c.location)}</div>`;
     if (c.phone)    html += `<div class="workspace-contact-phone">${esc(c.phone)}</div>`;
     if (c.email)    html += `<div class="contact-view-email-text">${esc(c.email)}</div>`;
-    html += `<button class="workspace-btn-secondary" style="margin-top:12px" onclick="cvStartEdit()">Edit contact</button>`;
+    html += `<button class="workspace-btn-secondary" style="margin-top:8px" onclick="cvStartEdit()">Edit contact</button>`;
   }
 
   // Note history
-  html += '<div class="modal-divider" style="margin-top:18px"></div>';
+  html += '<div class="modal-divider" style="margin-top:8px"></div>';
   html += '<div class="section-label" style="margin-bottom:10px">Notes</div>';
   const noteHistory = Array.isArray(c.note_history) ? c.note_history : [];
   const legacyNote  = (c.notes || c.description || '').trim();
-  if (noteHistory.length || legacyNote) {
+  // Merge legacy note into note_history as a deletable entry if no structured history exists
+  const allNotes = noteHistory.length
+    ? noteHistory
+    : (legacyNote ? [{ text: legacyNote, ts: null }] : []);
+  if (allNotes.length) {
     html += '<div class="contact-note-history">';
-    noteHistory.map((entry, ni) => ({ entry, ni })).reverse().forEach(({ entry, ni }) => {
+    allNotes.map((entry, ni) => ({ entry, ni })).reverse().forEach(({ entry, ni }) => {
       const ts = entry.ts ? _fmtNoteDate(entry.ts) : '';
       const isEditingThis = _cvEditingNote && _cvEditingNote.ni === ni;
       if (isEditingThis) {
@@ -2059,12 +2063,6 @@ function _renderContactView() {
         </div>`;
       }
     });
-    if (legacyNote && !noteHistory.length) {
-      html += `<div class="contact-note-entry contact-note-legacy">
-        <span class="contact-note-ts">note</span>
-        <span class="contact-note-text">${esc(legacyNote)}</span>
-      </div>`;
-    }
     html += '</div>';
   }
 
@@ -2147,7 +2145,11 @@ function cvSaveEditedNote(ni) {
   const text = (ta?.value || '').trim();
   if (!text) { if (ta) ta.focus(); return; }
   const contact = _cvData.contacts[_cvIdx];
-  if (!Array.isArray(contact.note_history) || !contact.note_history[ni]) return;
+  // Handle legacy-note-only case: save back to notes field and promote to history
+  if (!Array.isArray(contact.note_history) || !contact.note_history.length) {
+    contact.notes = text; _cvEditingNote = null; _cvSaveToServer(); return;
+  }
+  if (!contact.note_history[ni]) return;
   contact.note_history[ni] = { ...contact.note_history[ni], text };
   _cvEditingNote = null;
   _cvSaveToServer();
@@ -2156,7 +2158,12 @@ function cvSaveEditedNote(ni) {
 function cvDeleteNote(ni) {
   if (!confirm('Delete this note entry? This cannot be undone.')) return;
   const contact = _cvData.contacts[_cvIdx];
-  if (!Array.isArray(contact.note_history)) return;
+  // Handle legacy-note-only case: clear the notes field instead
+  if (!Array.isArray(contact.note_history) || !contact.note_history.length) {
+    contact.notes = ''; contact.description = '';
+    if (_cvEditingNote) _cvEditingNote = null;
+    _cvSaveToServer(); return;
+  }
   contact.note_history.splice(ni, 1);
   if (_cvEditingNote && _cvEditingNote.ni === ni) _cvEditingNote = null;
   _cvSaveToServer();
@@ -2279,11 +2286,13 @@ function _renderFirmWorkspace() {
       // Note history — new entries + backward-compat legacy notes field
       const noteHistory  = Array.isArray(c.note_history) ? c.note_history : [];
       const legacyNote   = (c.notes || c.description || '').trim();
+      // Merge legacy note as a deletable entry when no structured history exists
+      const allNotesFw   = noteHistory.length ? noteHistory : (legacyNote ? [{ text: legacyNote, ts: null }] : []);
       let noteHistoryHtml = '';
-      if (noteHistory.length || legacyNote) {
+      if (allNotesFw.length) {
         noteHistoryHtml += '<div class="contact-note-history">';
         // Render newest-first; preserve original index (ni) for edit targeting
-        noteHistory.map((entry, ni) => ({ entry, ni })).reverse().forEach(({ entry, ni }) => {
+        allNotesFw.map((entry, ni) => ({ entry, ni })).reverse().forEach(({ entry, ni }) => {
           const ts = entry.ts ? _fmtNoteDate(entry.ts) : '';
           const isEditingThis = _fwEditingNote && _fwEditingNote.ci === idx && _fwEditingNote.ni === ni;
           if (isEditingThis) {
@@ -2306,13 +2315,6 @@ function _renderFirmWorkspace() {
             </div>`;
           }
         });
-        // Legacy single-string note shown only when no structured history exists
-        if (legacyNote && !noteHistory.length) {
-          noteHistoryHtml += `<div class="contact-note-entry contact-note-legacy">
-            <span class="contact-note-ts">note</span>
-            <span class="contact-note-text">${esc(legacyNote)}</span>
-          </div>`;
-        }
         noteHistoryHtml += '</div>';
       }
 
@@ -2656,7 +2658,16 @@ function deleteContactNote(ci, ni) {
   if (!confirm('Delete this note entry? This cannot be undone.')) return;
   _syncFwNotes();
   const contact = _fwData.contacts[ci];
-  if (!Array.isArray(contact.note_history)) return;
+  // Handle legacy-note-only case: clear notes field
+  if (!Array.isArray(contact.note_history) || !contact.note_history.length) {
+    contact.notes = ''; contact.description = '';
+    if (_fwEditingNote && _fwEditingNote.ci === ci) _fwEditingNote = null;
+    _afterFwContactsSave();
+    apiFetch('/api/workspace/' + _fwKey, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(_fwData),
+    }).then(() => _renderFirmWorkspace()); return;
+  }
   contact.note_history.splice(ni, 1);
   if (_fwEditingNote && _fwEditingNote.ci === ci && _fwEditingNote.ni === ni) _fwEditingNote = null;
   _afterFwContactsSave();

@@ -1242,7 +1242,6 @@ body {
   font-size: 0.78rem; color: var(--muted); line-height: 1.5;
   white-space: pre-wrap;
 }
-.contact-note-legacy .contact-note-ts { font-style: italic; }
 .contact-note-editing { background: var(--raised); border-radius: 6px; padding: 6px 8px; }
 
 /* ── Add-note form (inline per contact) ─────────────────────── */
