@@ -134,11 +134,45 @@ def _compute_changes(closes) -> dict:
         return round((current - ref) / ref * 100, 3)
 
     return {
-        "change_1d":  _pct(float(closes.iloc[-2])),  # previous session close
+        "change_1d":  _pct(float(closes.iloc[-2])),  # previous session close (overridden in callers when live price available)
         "change_1w":  _pct(_ref_close(7)),
         "change_1mo": _pct(_ref_close(30)),
         "change_1y":  _pct(_ref_close(365)),
     }
+
+
+def _daily_prev_close(cd) -> float | None:
+    """Return the daily close that serves as the reference for today's 1d change.
+
+    When markets are open:
+      - The daily series ends at yesterday's close (cd[-1] = yesterday).
+      - We return cd[-1] so the 1d change reads: (live_price - yesterday) / yesterday.
+
+    When markets are closed / session already settled:
+      - Today's close is at cd[-1]; yesterday is at cd[-2].
+      - We return cd[-2].
+
+    This ensures the displayed 1d change always compares the current price
+    against the most recent completed prior-session close.
+    """
+    if len(cd) < 1:
+        return None
+    last_idx = cd.index[-1]
+    today = datetime.now(timezone.utc).date()
+    try:
+        if hasattr(last_idx, "tz_convert"):
+            last_date = last_idx.tz_convert(timezone.utc).date()
+        elif hasattr(last_idx, "tz_localize"):
+            last_date = last_idx.tz_localize(timezone.utc).date()
+        else:
+            last_date = last_idx.date()
+    except Exception:
+        last_date = today  # conservative: assume today's bar is present
+    if last_date >= today:
+        # Today's session already in the daily data → prev close is cd[-2]
+        return float(cd.iloc[-2]) if len(cd) >= 2 else None
+    # Daily series ends before today → cd[-1] IS yesterday's (prev-session) close
+    return float(cd.iloc[-1])
 
 try:
     import yfinance as yf
@@ -241,8 +275,15 @@ def fetch_bitcoin():
     if hist is not None and not hist.empty:
         closes = hist["Close"].dropna()
         if len(closes) >= 2:
-            prev_price = float(closes.iloc[-2])
             changes = _compute_changes(closes)
+            # Anchor change_1d to live Binance price vs prev-session daily close.
+            # _compute_changes uses cd[-1] as "current" which is yesterday's close
+            # when markets are open — this fixes the inconsistency.
+            ref = _daily_prev_close(closes)
+            if ref is not None and ref != 0:
+                prev_price = ref
+                if price is not None:
+                    changes["change_1d"] = round((price - ref) / ref * 100, 3)
         if price is None and len(closes) >= 1:
             price = float(closes.iloc[-1])   # yfinance as last-resort price source
 
@@ -260,8 +301,12 @@ def fetch_ethereum():
     if hist is not None and not hist.empty:
         closes = hist["Close"].dropna()
         if len(closes) >= 2:
-            prev_price = float(closes.iloc[-2])
             changes = _compute_changes(closes)
+            ref = _daily_prev_close(closes)
+            if ref is not None and ref != 0:
+                prev_price = ref
+                if price is not None:
+                    changes["change_1d"] = round((price - ref) / ref * 100, 3)
         if price is None and len(closes) >= 1:
             price = float(closes.iloc[-1])   # yfinance as last-resort price source
 
@@ -296,8 +341,12 @@ def fetch_eurusd():
     if hist_daily is not None and not hist_daily.empty:
         closes = hist_daily["Close"].dropna()
         if len(closes) >= 2:
-            prev_price = float(closes.iloc[-2])
             changes = _compute_changes(closes)
+            ref = _daily_prev_close(closes)
+            if ref is not None and ref != 0:
+                prev_price = ref
+                if price is not None:
+                    changes["change_1d"] = round((price - ref) / ref * 100, 3)
 
     if price is None:
         raise ValueError("No EUR/USD price from yfinance or Frankfurter")
@@ -309,12 +358,11 @@ def fetch_yf(ticker: str) -> tuple:
         raise RuntimeError("yfinance not installed — run: pip install yfinance")
 
     # ── Intraday price: most current bar available (~15-min delayed) ──
-    # Reuses the same cache entry as the 1d chart → price card and chart are consistent.
     hist_intra = _yf_fetch(ticker, "1d", "5m")
     if hist_intra is None or hist_intra.empty:
         hist_intra = _yf_fetch(ticker, "5d", "5m")  # handles rollover / weekends
 
-    # ── Daily history: change calculations across all periods ──
+    # ── Daily history: reference close and multi-period changes ──
     hist_daily = _yf_fetch(ticker, "1y", "1d")
     if hist_daily is None or hist_daily.empty:
         hist_daily = _yf_fetch(ticker, "5d", "1d")  # futures rollover fallback
@@ -322,26 +370,53 @@ def fetch_yf(ticker: str) -> tuple:
     if (hist_intra is None or hist_intra.empty) and (hist_daily is None or hist_daily.empty):
         raise ValueError(f"No data returned for {ticker}")
 
-    # Current price from intraday (most current)
-    price = None
+    # Current price from intraday
+    intra_price = None
     if hist_intra is not None and not hist_intra.empty:
         ci = hist_intra["Close"].dropna()
         if len(ci) >= 1:
-            price = float(ci.iloc[-1])
+            intra_price = float(ci.iloc[-1])
 
-    # Changes from daily history
-    prev_price = None
-    changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
+    # Daily close series
+    cd = None
     if hist_daily is not None and not hist_daily.empty:
         cd = hist_daily["Close"].dropna()
-        if len(cd) >= 1:
-            if price is None:
-                price = float(cd.iloc[-1])   # last resort: daily close
-            prev_price = float(cd.iloc[-2]) if len(cd) >= 2 else None
-            changes = _compute_changes(cd)
+        if cd.empty:
+            cd = None
+
+    # Sanity-check intraday vs daily: if they diverge by >20% the intraday
+    # data is likely stale, wrong contract, or a rollover artifact — discard it.
+    # This catches known data-quality issues with futures tickers (e.g. BZ=F).
+    if intra_price is not None and cd is not None and len(cd) >= 1:
+        daily_last = float(cd.iloc[-1])
+        if daily_last > 0 and abs(intra_price - daily_last) / daily_last > 0.20:
+            intra_price = None  # fall back to daily close
+
+    price = intra_price
+    if price is None and cd is not None and len(cd) >= 1:
+        price = float(cd.iloc[-1])   # last resort: most recent daily close
 
     if price is None:
         raise ValueError(f"No close prices for {ticker}")
+
+    prev_price = None
+    changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
+
+    if cd is not None and len(cd) >= 2:
+        # Multi-period changes (1w / 1mo / 1y) from the daily series
+        changes = _compute_changes(cd)
+
+        # Recompute change_1d anchored to the live intraday price vs prev-session close.
+        # _compute_changes uses cd[-1] as "current" which equals yesterday's close when
+        # markets are open, producing yesterday's change instead of today's.
+        ref = _daily_prev_close(cd)
+        if ref is not None and ref != 0:
+            prev_price = ref
+            if intra_price is not None:
+                # Live price available: today's change = (live - prev_close) / prev_close
+                changes["change_1d"] = round((intra_price - ref) / ref * 100, 3)
+            # else: no valid intraday — keep daily-to-daily change_1d from _compute_changes
+
     return price, prev_price, changes
 
 
