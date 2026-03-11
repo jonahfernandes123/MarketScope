@@ -271,16 +271,36 @@ def fetch_ethereum():
 
 
 def fetch_eurusd():
-    data = _get("https://api.frankfurter.app/latest", params={"from": "EUR", "to": "USD"})
-    price = float(data["rates"]["USD"])
+    # ── Intraday price from yfinance (~15-min delayed, more current than daily ECB rate) ──
+    price = None
+    hist_intra = _yf_fetch("EURUSD=X", "1d", "5m")
+    if hist_intra is None or hist_intra.empty:
+        hist_intra = _yf_fetch("EURUSD=X", "5d", "5m")
+    if hist_intra is not None and not hist_intra.empty:
+        ci = hist_intra["Close"].dropna()
+        if len(ci) >= 1:
+            price = float(ci.iloc[-1])
+
+    # Fallback: Frankfurter.app official ECB daily rate
+    if price is None:
+        try:
+            data = _get("https://api.frankfurter.app/latest", params={"from": "EUR", "to": "USD"})
+            price = float(data["rates"]["USD"])
+        except Exception:
+            pass
+
+    # ── Change calculations from daily history ──
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
-    hist = _yf_fetch("EURUSD=X", "1y", "1d")
-    if hist is not None and not hist.empty:
-        closes = hist["Close"].dropna()
+    hist_daily = _yf_fetch("EURUSD=X", "1y", "1d")
+    if hist_daily is not None and not hist_daily.empty:
+        closes = hist_daily["Close"].dropna()
         if len(closes) >= 2:
             prev_price = float(closes.iloc[-2])
             changes = _compute_changes(closes)
+
+    if price is None:
+        raise ValueError("No EUR/USD price from yfinance or Frankfurter")
     return price, prev_price, changes
 
 
@@ -288,23 +308,40 @@ def fetch_yf(ticker: str) -> tuple:
     if not YFINANCE_AVAILABLE:
         raise RuntimeError("yfinance not installed — run: pip install yfinance")
 
-    # Primary: full year of daily closes for complete change calculations
-    hist = _yf_fetch(ticker, "1y", "1d")
+    # ── Intraday price: most current bar available (~15-min delayed) ──
+    # Reuses the same cache entry as the 1d chart → price card and chart are consistent.
+    hist_intra = _yf_fetch(ticker, "1d", "5m")
+    if hist_intra is None or hist_intra.empty:
+        hist_intra = _yf_fetch(ticker, "5d", "5m")  # handles rollover / weekends
 
-    # Fallback: shorter window handles futures near contract rollover (e.g. SI=F, BZ=F)
-    if hist is None or hist.empty:
-        hist = _yf_fetch(ticker, "5d", "1d")
+    # ── Daily history: change calculations across all periods ──
+    hist_daily = _yf_fetch(ticker, "1y", "1d")
+    if hist_daily is None or hist_daily.empty:
+        hist_daily = _yf_fetch(ticker, "5d", "1d")  # futures rollover fallback
 
-    if hist is None or hist.empty:
+    if (hist_intra is None or hist_intra.empty) and (hist_daily is None or hist_daily.empty):
         raise ValueError(f"No data returned for {ticker}")
 
-    closes = hist["Close"].dropna()
-    if len(closes) < 1:
-        raise ValueError(f"No close prices for {ticker}")
+    # Current price from intraday (most current)
+    price = None
+    if hist_intra is not None and not hist_intra.empty:
+        ci = hist_intra["Close"].dropna()
+        if len(ci) >= 1:
+            price = float(ci.iloc[-1])
 
-    price      = float(closes.iloc[-1])
-    prev_price = float(closes.iloc[-2]) if len(closes) >= 2 else None
-    changes    = _compute_changes(closes)
+    # Changes from daily history
+    prev_price = None
+    changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
+    if hist_daily is not None and not hist_daily.empty:
+        cd = hist_daily["Close"].dropna()
+        if len(cd) >= 1:
+            if price is None:
+                price = float(cd.iloc[-1])   # last resort: daily close
+            prev_price = float(cd.iloc[-2]) if len(cd) >= 2 else None
+            changes = _compute_changes(cd)
+
+    if price is None:
+        raise ValueError(f"No close prices for {ticker}")
     return price, prev_price, changes
 
 

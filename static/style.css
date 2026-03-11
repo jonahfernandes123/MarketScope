@@ -974,11 +974,20 @@ body {
   .signals-strip { grid-template-columns: 1fr; }
 }
 .signal-card {
+  display: block;
   background: var(--surface);
   border: 1px solid var(--border);
   border-top: 3px solid var(--signal-accent, #3b82f6);
   border-radius: 0 0 10px 10px;
   padding: 13px 15px 12px;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.signal-card:hover {
+  background: var(--surface-alt, #1a1d27);
+  border-color: var(--signal-accent, #3b82f6);
 }
 .signal-theme {
   font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em;

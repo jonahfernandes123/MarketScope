@@ -395,6 +395,8 @@ async function loadBriefingData() {
   renderSignalsBanner();
 }
 loadBriefingData();
+// Refresh all briefing data (news, signals, macro drivers) every 5 minutes
+setInterval(loadBriefingData, 5 * 60 * 1000);
 
 /* ── Briefing card preview renderers ──────────────────────────────────────── */
 function renderMoversPreview() {
@@ -438,7 +440,12 @@ const _SIGNAL_FILTERS = [
 function renderSignalsBanner() {
   const el = document.getElementById('signals-strip');
   if (!el) return;
-  const drivers = _driversData || [];
+  // Sort by recency first so we always pick the most current matching article
+  const drivers = [...(_driversData || [])].sort((a, b) => {
+    const ta = a.published ? new Date(a.published).getTime() : 0;
+    const tb = b.published ? new Date(b.published).getTime() : 0;
+    return tb - ta;
+  });
   if (!drivers.length) return;
 
   const used = new Set();
@@ -448,7 +455,7 @@ function renderSignalsBanner() {
     return match || null;
   });
 
-  // Fill empty slots with first unclaimed driver
+  // Fill empty slots with most recent unclaimed driver
   const fallbacks = drivers.filter(d => !used.has(d));
   signals.forEach((s, i) => {
     if (!s && fallbacks.length) signals[i] = fallbacks.shift();
@@ -456,13 +463,14 @@ function renderSignalsBanner() {
 
   el.innerHTML = signals.map((d, i) => {
     if (!d) return '';
-    const f   = _SIGNAL_FILTERS[i];
+    const f    = _SIGNAL_FILTERS[i];
     const meta = [d.source, d.published].filter(Boolean).join(' · ');
-    return `<div class="signal-card" style="--signal-accent:${f.accent}">
+    // Use <a> so each signal is clickable and opens the source article
+    return `<a class="signal-card" href="${esc(d.url || '#')}" target="_blank" rel="noopener" style="--signal-accent:${f.accent}">
       <div class="signal-theme">${f.label}</div>
       <div class="signal-headline">${esc(d.title)}</div>
       ${meta ? `<div class="signal-meta">${esc(meta)}</div>` : ''}
-    </div>`;
+    </a>`;
   }).join('');
 }
 
@@ -1668,6 +1676,51 @@ function renderFirmsPage() {
 }
 renderFirmsPage();
 
+// ── Firm activity auto-refresh ────────────────────────────────────────────────
+let _firmActivityTimer = null;
+
+function _loadFirmActivity(key) {
+  const f = _FIRMS_MAP[key];
+  if (!f) return;
+  const keyword = f.category === 'Trading House' ? 'commodity trading'
+                : f.category === 'Bank'          ? 'investment bank'
+                :                                  'hedge fund';
+  const q = encodeURIComponent(f.name + ' ' + keyword);
+  fetch('/api/news/search?q=' + q)
+    .then(r => r.json())
+    .then(articles => {
+      const byDate = Array.isArray(articles)
+        ? [...articles].sort((a, b) => {
+            const ta = a.published ? new Date(a.published).getTime() : 0;
+            const tb = b.published ? new Date(b.published).getTime() : 0;
+            return tb - ta;
+          })
+        : [];
+      const area = document.getElementById('firm-activity-body');
+      if (!area) return;
+      const _actTs = `<div class="page-updated-line" style="margin-top:10px;margin-bottom:0">${_fmtUpdated(new Date())}</div>`;
+      if (!byDate.length) {
+        area.innerHTML = '<p class="firm-activity-none">No recent news found for ' + esc(f.name) + '.</p>' + _actTs;
+        return;
+      }
+      area.innerHTML = '<div class="firm-timeline">' +
+        byDate.map(a => {
+          const dateLabel = _relativeDate(a.published);
+          return `<div class="firm-timeline-entry">
+            <div class="firm-timeline-date">${dateLabel}</div>
+            <div class="firm-timeline-content">
+              <a class="firm-timeline-headline" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+              ${a.source ? `<div class="firm-timeline-meta">${esc(a.source)}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('') + '</div>' + _actTs;
+    })
+    .catch(() => {
+      const area = document.getElementById('firm-activity-body');
+      if (area) area.innerHTML = '<p class="firm-activity-none">Could not load recent activity.</p>';
+    });
+}
+
 // ── Firm workspace state (one modal open at a time) ─────────────────────────
 let _fwKey           = null;
 let _fwData          = { notes: '', contacts: [] };
@@ -1732,45 +1785,11 @@ function openFirmModal(key) {
   document.getElementById('firm-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 
-  // Fetch live recent activity for this firm
-  const keyword = f.category === 'Trading House' ? 'commodity trading'
-                : f.category === 'Bank'          ? 'investment bank'
-                :                                  'hedge fund';
-  const q = encodeURIComponent(f.name + ' ' + keyword);
-  fetch('/api/news/search?q=' + q)
-    .then(r => r.json())
-    .then(articles => {
-      const byDate = Array.isArray(articles)
-        ? [...articles].sort((a, b) => {
-            const ta = a.published ? new Date(a.published).getTime() : 0;
-            const tb = b.published ? new Date(b.published).getTime() : 0;
-            return tb - ta;
-          })
-        : [];
+  _loadFirmActivity(key);
 
-      const area = document.getElementById('firm-activity-body');
-      if (!area) return;
-      const _actTs = `<div class="page-updated-line" style="margin-top:10px;margin-bottom:0">${_fmtUpdated(new Date())}</div>`;
-      if (!byDate.length) {
-        area.innerHTML = '<p class="firm-activity-none">No recent news found for ' + esc(f.name) + '.</p>' + _actTs;
-        return;
-      }
-      area.innerHTML = '<div class="firm-timeline">' +
-        byDate.map(a => {
-          const dateLabel = _relativeDate(a.published);
-          return `<div class="firm-timeline-entry">
-            <div class="firm-timeline-date">${dateLabel}</div>
-            <div class="firm-timeline-content">
-              <a class="firm-timeline-headline" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
-              ${a.source ? `<div class="firm-timeline-meta">${esc(a.source)}</div>` : ''}
-            </div>
-          </div>`;
-        }).join('') + '</div>' + _actTs;
-    })
-    .catch(() => {
-      const area = document.getElementById('firm-activity-body');
-      if (area) area.innerHTML = '<p class="firm-activity-none">Could not load recent activity.</p>';
-    });
+  // Auto-refresh firm activity every 3 minutes while this modal is open
+  if (_firmActivityTimer) clearInterval(_firmActivityTimer);
+  _firmActivityTimer = setInterval(() => { if (_fwKey === key) _loadFirmActivity(key); }, 3 * 60 * 1000);
 
   // Load private workspace data for this user + firm
   apiFetch('/api/workspace/' + key)
@@ -1787,6 +1806,7 @@ function openFirmModal(key) {
 }
 
 function closeFirmModal() {
+  if (_firmActivityTimer) { clearInterval(_firmActivityTimer); _firmActivityTimer = null; }
   document.getElementById('firm-overlay').classList.remove('open');
   document.body.style.overflow = '';
 }
