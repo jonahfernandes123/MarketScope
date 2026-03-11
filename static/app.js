@@ -900,20 +900,9 @@ async function changeRange(range) {
   document.querySelectorAll('.range-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.range === range);
   });
-
-  // Update modal header change % to match selected range
-  const inst = instruments.find(i => i.key === currentKey);
-  if (inst) {
-    const chg   = _instChg(inst, range);
-    const chgEl = document.getElementById('m-chg');
-    if (chg === null) {
-      chgEl.textContent = ''; chgEl.className = 'modal-chg';
-    } else if (chg > 0) {
-      chgEl.textContent = '\u25b2 +' + chg.toFixed(2) + '%'; chgEl.className = 'modal-chg up';
-    } else {
-      chgEl.textContent = '\u25bc ' + chg.toFixed(2) + '%'; chgEl.className = 'modal-chg down';
-    }
-  }
+  // Clear header while chart loads; renderChart will set correct values from chart series.
+  const chgEl = document.getElementById('m-chg');
+  if (chgEl) { chgEl.textContent = '\u2026'; chgEl.className = 'modal-chg'; }
 
   resetChart();
   try {
@@ -1030,6 +1019,28 @@ function renderChart(hist) {
       }
     }
   });
+
+  // Sync modal header to chart series: price = latest point, change = first→last
+  if (prices.length >= 1) {
+    const latest = prices[prices.length - 1];
+    const prEl = document.getElementById('m-price');
+    if (prEl) {
+      prEl.textContent = hist.thousands
+        ? hist.prefix + latest.toLocaleString('en-US', { minimumFractionDigits: hist.decimals, maximumFractionDigits: hist.decimals }) + hist.suffix
+        : hist.prefix + latest.toFixed(hist.decimals) + hist.suffix;
+    }
+    const chgEl = document.getElementById('m-chg');
+    if (chgEl) {
+      if (prices.length >= 2 && prices[0] !== 0) {
+        const pct = (latest - prices[0]) / prices[0] * 100;
+        if (pct > 0)      { chgEl.textContent = '\u25b2 +' + pct.toFixed(2) + '%'; chgEl.className = 'modal-chg up'; }
+        else if (pct < 0) { chgEl.textContent = '\u25bc '  + pct.toFixed(2) + '%'; chgEl.className = 'modal-chg down'; }
+        else              { chgEl.textContent = '0.00%';                            chgEl.className = 'modal-chg neu'; }
+      } else {
+        chgEl.textContent = ''; chgEl.className = 'modal-chg';
+      }
+    }
+  }
 }
 
 /* ── Articles ───────────────────────────────────────────────────────────────── */
