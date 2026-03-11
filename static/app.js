@@ -1560,7 +1560,24 @@ const _FIRMS_MAP = Object.fromEntries(ALL_FIRMS.map(f => [f.key, f]));
 let _firmsSearchQuery = '';
 let _firmsCategoryFilter = null; // null = default featured view; string = focused category
 const _contactsIndex = {}; // firmKey → contacts array
-let _contactViewCache = []; // rebuilt each renderFirmsPage search render; [{contact,firm},…]
+let _contactViewCache = []; // rebuilt each renderFirmsPage search render; [{firmKey,contactIdx},…]
+
+// ── Contact view state ────────────────────────────────────────────────────────
+let _cvKey         = null;   // firmKey of the open contact view
+let _cvIdx         = null;   // contact index within _cvData.contacts
+let _cvData        = null;   // { notes, contacts } workspace data for this firm
+let _cvEditing     = false;  // true = showing edit form for contact fields
+let _cvEditingNote = null;   // { ni } or null — note being edited inline
+let _cvAddingNote  = false;  // true = add-note textarea visible
+
+// After any firm-modal contact save: sync _contactsIndex and the open contact view
+function _afterFwContactsSave() {
+  _contactsIndex[_fwKey] = _fwData.contacts;
+  if (_cvKey === _fwKey && _cvData) {
+    _cvData.contacts = _fwData.contacts;
+    _renderContactView();
+  }
+}
 
 function setFirmsSearch(val) {
   _firmsSearchQuery = val;
@@ -1643,7 +1660,9 @@ function _refreshModalFavBtn(key) {
 }
 
 function _contactResultHtml(contact, firm) {
-  const cacheIdx = _contactViewCache.push({ contact, firm }) - 1;
+  const contacts   = _contactsIndex[firm.key] || [];
+  const contactIdx = contacts.indexOf(contact);
+  const cacheIdx   = _contactViewCache.push({ firmKey: firm.key, contactIdx }) - 1;
   const logo = `<span class="firm-logo contact-result-logo" style="background:${firm.color}">${esc(firm.initials)}</span>`;
   const titlePart = contact.title ? `<span class="contact-result-sep">&middot;</span><span class="contact-result-title">${esc(contact.title)}</span>` : '';
   const locPart   = contact.location ? `<span class="contact-result-sep">&middot;</span><span class="contact-result-loc">${esc(contact.location)}</span>` : '';
@@ -1925,51 +1944,33 @@ document.getElementById('firm-overlay').addEventListener('click', e => {
 function openContactView(cacheIdx) {
   const item = _contactViewCache[cacheIdx];
   if (!item) return;
-  const { contact: c, firm: f } = item;
-
-  const noteHistory = Array.isArray(c.note_history) ? c.note_history : [];
-  const legacyNote  = (c.notes || c.description || '').trim();
-  let noteHtml = '';
-  if (noteHistory.length || legacyNote) {
-    noteHtml += '<div class="contact-note-history">';
-    [...noteHistory].reverse().forEach(({ text, ts }) => {
-      const tsStr = ts ? _fmtNoteDate(ts) : '';
-      noteHtml += `<div class="contact-note-entry">
-        ${tsStr ? `<div class="contact-note-entry-header"><span class="contact-note-ts">${esc(tsStr)}</span></div>` : ''}
-        <span class="contact-note-text">${esc(text || '')}</span>
-      </div>`;
-    });
-    if (legacyNote && !noteHistory.length) {
-      noteHtml += `<div class="contact-note-entry contact-note-legacy">
-        <span class="contact-note-ts">note</span>
-        <span class="contact-note-text">${esc(legacyNote)}</span>
-      </div>`;
-    }
-    noteHtml += '</div>';
-  }
-
-  const expLabel = c.years_experience ? `<span class="workspace-contact-exp">${esc(String(c.years_experience))} yrs exp</span>` : '';
-  const liLink   = c.linkedin_url ? `<a class="workspace-contact-linkedin" href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" title="LinkedIn profile">${_SVG_LINKEDIN}</a>` : '';
-  const emailLink = c.email ? `<a class="workspace-contact-email" href="mailto:${esc(c.email)}" title="${esc(c.email)}">${_SVG_EMAIL}</a>` : '';
-
-  document.getElementById('contact-view-body').innerHTML = `
-    <div class="contact-view-firm-row" onclick="closeContactView();openFirmModal('${f.key}')" title="Open firm workspace">
-      <span class="firm-logo contact-view-firm-logo" style="background:${f.color}">${esc(f.initials)}</span>
-      <span class="contact-view-firm-name">${esc(f.name)}</span>
-      <span class="contact-view-firm-arrow">&rsaquo;</span>
-    </div>
-    <div class="contact-view-name">${esc(c.name)}${liLink}${emailLink}</div>
-    ${c.title || expLabel ? `<div class="workspace-contact-title">${c.title ? esc(c.title) : ''}${expLabel ? `&ensp;${expLabel}` : ''}</div>` : ''}
-    ${c.location ? `<div class="workspace-contact-location">${esc(c.location)}</div>` : ''}
-    ${c.phone    ? `<div class="workspace-contact-phone">${esc(c.phone)}</div>` : ''}
-    ${c.email    ? `<div class="workspace-contact-email-text">${esc(c.email)}</div>` : ''}
-    ${noteHtml ? `<div class="modal-divider" style="margin-top:18px"></div><div class="section-label" style="margin-bottom:10px">Notes</div>${noteHtml}` : ''}
-  `;
+  _cvKey         = item.firmKey;
+  _cvIdx         = item.contactIdx;
+  _cvData        = null;
+  _cvEditing     = false;
+  _cvEditingNote = null;
+  _cvAddingNote  = false;
+  document.getElementById('contact-view-body').innerHTML =
+    '<div class="placeholder"><span class="spin"></span>Loading\u2026</div>';
   document.getElementById('contact-view-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+  apiFetch('/api/workspace/' + _cvKey)
+    .then(r => r && r.json())
+    .then(data => {
+      if (!data) return;
+      _cvData = { notes: data.notes || '', contacts: Array.isArray(data.contacts) ? data.contacts : [] };
+      _contactsIndex[_cvKey] = _cvData.contacts;
+      _renderContactView();
+    })
+    .catch(() => {
+      const el = document.getElementById('contact-view-body');
+      if (el) el.innerHTML = '<p style="color:var(--muted);padding:16px 0">Could not load contact.</p>';
+    });
 }
 
 function closeContactView() {
+  _cvKey = null; _cvIdx = null; _cvData = null;
+  _cvEditing = false; _cvEditingNote = null; _cvAddingNote = false;
   document.getElementById('contact-view-overlay').classList.remove('open');
   document.body.style.overflow = '';
 }
@@ -1977,6 +1978,189 @@ document.getElementById('contact-view-close-btn').addEventListener('click', clos
 document.getElementById('contact-view-overlay').addEventListener('click', e => {
   if (e.target.id === 'contact-view-overlay') closeContactView();
 });
+
+function _renderContactView() {
+  const el = document.getElementById('contact-view-body');
+  if (!el || !_cvData) return;
+  const c    = _cvData.contacts[_cvIdx];
+  const firm = _FIRMS_MAP[_cvKey];
+  if (!c || !firm) {
+    el.innerHTML = '<p style="color:var(--muted);padding:16px 0">Contact not found.</p>';
+    return;
+  }
+  const expLabel  = c.years_experience ? `<span class="workspace-contact-exp">${esc(String(c.years_experience))} yrs exp</span>` : '';
+  const liLink    = c.linkedin_url ? `<a class="workspace-contact-linkedin" href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" title="LinkedIn">${_SVG_LINKEDIN}</a>` : '';
+  const emailLink = c.email ? `<a class="workspace-contact-email" href="mailto:${esc(c.email)}" title="${esc(c.email)}">${_SVG_EMAIL}</a>` : '';
+
+  let html = `<div class="contact-view-firm-row" onclick="closeContactView();openFirmModal('${firm.key}')" title="Open firm workspace">
+    <span class="firm-logo contact-view-firm-logo" style="background:${firm.color}">${esc(firm.initials)}</span>
+    <span class="contact-view-firm-name">${esc(firm.name)}</span>
+    <span class="contact-view-firm-arrow">&rsaquo;</span>
+  </div>`;
+
+  if (_cvEditing) {
+    html += `<div class="workspace-contact-form">
+      <div class="workspace-form-title">Edit Contact</div>
+      <div class="workspace-form-field"><label class="workspace-form-label">Name <span class="workspace-form-req">*</span></label>
+        <input class="workspace-input" id="cv-cf-name" type="text" value="${esc(c.name || '')}"></div>
+      <div class="workspace-form-field"><label class="workspace-form-label">Job Title</label>
+        <input class="workspace-input" id="cv-cf-title" type="text" value="${esc(c.title || '')}"></div>
+      <div class="workspace-form-field"><label class="workspace-form-label">Location</label>
+        <input class="workspace-input" id="cv-cf-location" type="text" value="${esc(c.location || '')}"></div>
+      <div class="workspace-form-field"><label class="workspace-form-label">Phone</label>
+        <input class="workspace-input" id="cv-cf-phone" type="tel" value="${esc(c.phone || '')}"></div>
+      <div class="workspace-form-field"><label class="workspace-form-label">Email</label>
+        <input class="workspace-input" id="cv-cf-email" type="email" value="${esc(c.email || '')}"></div>
+      <div class="workspace-form-field"><label class="workspace-form-label">Years of Experience</label>
+        <input class="workspace-input" id="cv-cf-exp" type="number" min="0" max="60" value="${esc(c.years_experience != null ? String(c.years_experience) : '')}"></div>
+      <div class="workspace-form-field"><label class="workspace-form-label">LinkedIn URL</label>
+        <input class="workspace-input" id="cv-cf-linkedin" type="url" value="${esc(c.linkedin_url || '')}"></div>
+      <div class="workspace-form-actions">
+        <button class="workspace-btn-primary" onclick="cvSaveEdit()">Save</button>
+        <button class="workspace-btn-ghost"   onclick="cvCancelEdit()">Cancel</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<div class="contact-view-name">${esc(c.name)}${liLink}${emailLink}</div>`;
+    if (c.title || expLabel) html += `<div class="workspace-contact-title">${c.title ? esc(c.title) : ''}${expLabel ? `&ensp;${expLabel}` : ''}</div>`;
+    if (c.location) html += `<div class="workspace-contact-location">${esc(c.location)}</div>`;
+    if (c.phone)    html += `<div class="workspace-contact-phone">${esc(c.phone)}</div>`;
+    if (c.email)    html += `<div class="contact-view-email-text">${esc(c.email)}</div>`;
+    html += `<button class="workspace-btn-secondary" style="margin-top:12px" onclick="cvStartEdit()">Edit contact</button>`;
+  }
+
+  // Note history
+  html += '<div class="modal-divider" style="margin-top:18px"></div>';
+  html += '<div class="section-label" style="margin-bottom:10px">Notes</div>';
+  const noteHistory = Array.isArray(c.note_history) ? c.note_history : [];
+  const legacyNote  = (c.notes || c.description || '').trim();
+  if (noteHistory.length || legacyNote) {
+    html += '<div class="contact-note-history">';
+    noteHistory.map((entry, ni) => ({ entry, ni })).reverse().forEach(({ entry, ni }) => {
+      const ts = entry.ts ? _fmtNoteDate(entry.ts) : '';
+      const isEditingThis = _cvEditingNote && _cvEditingNote.ni === ni;
+      if (isEditingThis) {
+        html += `<div class="contact-note-entry contact-note-editing">
+          ${ts ? `<div class="contact-note-entry-header"><span class="contact-note-ts">${esc(ts)}</span></div>` : ''}
+          <textarea class="workspace-input contact-addnote-textarea" id="cv-editnote-${ni}" rows="3">${esc(entry.text || '')}</textarea>
+          <div class="contact-addnote-actions">
+            <button class="workspace-btn-primary" onclick="cvSaveEditedNote(${ni})">Save</button>
+            <button class="workspace-btn-ghost"   onclick="cvCancelEditNote()">Cancel</button>
+          </div>
+        </div>`;
+      } else {
+        html += `<div class="contact-note-entry">
+          <div class="contact-note-entry-header">
+            ${ts ? `<span class="contact-note-ts">${esc(ts)}</span>` : ''}
+            <button class="contact-note-edit-btn"   onclick="cvStartEditNote(${ni})"  title="Edit note">${_SVG_PENCIL}</button>
+            <button class="contact-note-delete-btn" onclick="cvDeleteNote(${ni})"     title="Delete note">${_SVG_TRASH}</button>
+          </div>
+          <span class="contact-note-text">${esc(entry.text || '')}</span>
+        </div>`;
+      }
+    });
+    if (legacyNote && !noteHistory.length) {
+      html += `<div class="contact-note-entry contact-note-legacy">
+        <span class="contact-note-ts">note</span>
+        <span class="contact-note-text">${esc(legacyNote)}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  if (_cvAddingNote) {
+    html += `<div class="contact-addnote-form">
+      <textarea class="workspace-input contact-addnote-textarea" id="cv-addnote" placeholder="Add a note\u2026" rows="3"></textarea>
+      <div class="contact-addnote-actions">
+        <button class="workspace-btn-primary" onclick="cvSaveNote()">Save note</button>
+        <button class="workspace-btn-ghost"   onclick="cvCancelAddNote()">Cancel</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button class="workspace-btn-addnote" onclick="cvStartAddNote()">+ Add note</button>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// ── Contact view editing functions ───────────────────────────────────────────
+
+function _cvSaveToServer() {
+  _contactsIndex[_cvKey] = _cvData.contacts;
+  if (_fwKey === _cvKey && _fwData) {
+    _fwData.contacts = _cvData.contacts;
+    _renderFirmWorkspace();
+  }
+  apiFetch('/api/workspace/' + _cvKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(_cvData),
+  }).then(() => _renderContactView());
+}
+
+function cvStartEdit() { _cvEditing = true; _cvAddingNote = false; _cvEditingNote = null; _renderContactView(); }
+function cvCancelEdit() { _cvEditing = false; _renderContactView(); }
+
+function cvSaveEdit() {
+  const name         = (document.getElementById('cv-cf-name')?.value     || '').trim();
+  const title        = (document.getElementById('cv-cf-title')?.value    || '').trim();
+  const location     = (document.getElementById('cv-cf-location')?.value || '').trim();
+  const phone        = (document.getElementById('cv-cf-phone')?.value    || '').trim();
+  const email        = (document.getElementById('cv-cf-email')?.value    || '').trim();
+  const linkedin_url = (document.getElementById('cv-cf-linkedin')?.value || '').trim();
+  const expRaw       = (document.getElementById('cv-cf-exp')?.value      || '').trim();
+  const years_experience = expRaw !== '' ? parseInt(expRaw, 10) || null : null;
+  if (!name) { const el = document.getElementById('cv-cf-name'); if (el) { el.focus(); el.classList.add('workspace-input-err'); } return; }
+  const existing = _cvData.contacts[_cvIdx];
+  _cvData.contacts[_cvIdx] = { name, title, location, phone, email, years_experience, linkedin_url, notes: existing.notes || '', note_history: existing.note_history || [] };
+  _cvEditing = false;
+  _cvSaveToServer();
+}
+
+function cvStartAddNote() {
+  _cvAddingNote = true; _cvEditingNote = null; _cvEditing = false;
+  _renderContactView();
+  setTimeout(() => { const ta = document.getElementById('cv-addnote'); if (ta) ta.focus(); }, 30);
+}
+function cvCancelAddNote() { _cvAddingNote = false; _renderContactView(); }
+
+function cvSaveNote() {
+  const ta = document.getElementById('cv-addnote');
+  const text = (ta?.value || '').trim();
+  if (!text) { if (ta) ta.focus(); return; }
+  const contact = _cvData.contacts[_cvIdx];
+  if (!Array.isArray(contact.note_history)) contact.note_history = [];
+  contact.note_history.push({ text, ts: new Date().toISOString() });
+  _cvAddingNote = false;
+  _cvSaveToServer();
+}
+
+function cvStartEditNote(ni) {
+  _cvEditingNote = { ni }; _cvAddingNote = false; _cvEditing = false;
+  _renderContactView();
+  setTimeout(() => { const ta = document.getElementById(`cv-editnote-${ni}`); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 30);
+}
+function cvCancelEditNote() { _cvEditingNote = null; _renderContactView(); }
+
+function cvSaveEditedNote(ni) {
+  const ta = document.getElementById(`cv-editnote-${ni}`);
+  const text = (ta?.value || '').trim();
+  if (!text) { if (ta) ta.focus(); return; }
+  const contact = _cvData.contacts[_cvIdx];
+  if (!Array.isArray(contact.note_history) || !contact.note_history[ni]) return;
+  contact.note_history[ni] = { ...contact.note_history[ni], text };
+  _cvEditingNote = null;
+  _cvSaveToServer();
+}
+
+function cvDeleteNote(ni) {
+  if (!confirm('Delete this note entry? This cannot be undone.')) return;
+  const contact = _cvData.contacts[_cvIdx];
+  if (!Array.isArray(contact.note_history)) return;
+  contact.note_history.splice(ni, 1);
+  if (_cvEditingNote && _cvEditingNote.ni === ni) _cvEditingNote = null;
+  _cvSaveToServer();
+}
 
 /* ── Date helpers ────────────────────────────────────────────────────────────── */
 function _relativeDate(dateStr) {
@@ -2344,7 +2528,7 @@ function deleteFirmContact(idx) {
   else if (_fwAddingNoteIdx !== null && _fwAddingNoteIdx > idx) _fwAddingNoteIdx--;
   if (_fwEditingNote && _fwEditingNote.ci === idx) _fwEditingNote = null;
   else if (_fwEditingNote && _fwEditingNote.ci > idx) _fwEditingNote = { ..._fwEditingNote, ci: _fwEditingNote.ci - 1 };
-  _contactsIndex[_fwKey] = _fwData.contacts;
+  _afterFwContactsSave();
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2374,7 +2558,7 @@ function saveEditedContact() {
     note_history: existing.note_history || [],
   };
   _fwEditingIdx = null;
-  _contactsIndex[_fwKey] = _fwData.contacts;
+  _afterFwContactsSave();
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2400,7 +2584,7 @@ function saveFirmContact() {
   const note_history = desc ? [{ text: desc, ts: new Date().toISOString() }] : [];
   _fwData.contacts.push({ name, title, notes: '', note_history, location, phone, email, years_experience, linkedin_url });
   _fwAddingContact = false;
-  _contactsIndex[_fwKey] = _fwData.contacts;
+  _afterFwContactsSave();
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2460,7 +2644,7 @@ function saveEditedNote(ci, ni) {
   if (!Array.isArray(contact.note_history) || !contact.note_history[ni]) return;
   contact.note_history[ni] = { ...contact.note_history[ni], text };
   _fwEditingNote = null;
-  _contactsIndex[_fwKey] = _fwData.contacts;
+  _afterFwContactsSave();
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2475,7 +2659,7 @@ function deleteContactNote(ci, ni) {
   if (!Array.isArray(contact.note_history)) return;
   contact.note_history.splice(ni, 1);
   if (_fwEditingNote && _fwEditingNote.ci === ci && _fwEditingNote.ni === ni) _fwEditingNote = null;
-  _contactsIndex[_fwKey] = _fwData.contacts;
+  _afterFwContactsSave();
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2492,7 +2676,7 @@ function saveContactNote(idx) {
   if (!Array.isArray(contact.note_history)) contact.note_history = [];
   contact.note_history.push({ text, ts: new Date().toISOString() });
   _fwAddingNoteIdx = null;
-  _contactsIndex[_fwKey] = _fwData.contacts;
+  _afterFwContactsSave();
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
