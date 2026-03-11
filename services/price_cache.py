@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import threading
 import time
 from datetime import datetime, timezone
@@ -11,6 +12,12 @@ from models.instruments import INSTRUMENTS
 
 _price_data: dict[str, dict] = {}
 _cache_lock = threading.Lock()
+
+# ── Refresh deduplication ─────────────────────────────────────────────────────────
+# Prevents concurrent refresh calls (e.g. startup + background loop overlap) from
+# both hammering upstream APIs simultaneously.
+
+_refresh_running = threading.Event()   # set = refresh in progress
 
 
 # ── Per-instrument update ────────────────────────────────────────────────────────
@@ -66,10 +73,20 @@ def _update_instrument(inst: dict) -> None:
 
 
 def refresh_prices() -> None:
-    threads = [threading.Thread(target=_update_instrument, args=(inst,), daemon=True)
-               for inst in INSTRUMENTS]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    """Refresh all instrument prices.
+
+    No-op if a refresh is already running (deduplication guard).
+    Limits concurrent upstream calls to 6 workers to avoid 429 storms.
+    """
+    if _refresh_running.is_set():
+        return
+    _refresh_running.set()
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            futs = [pool.submit(_update_instrument, inst) for inst in INSTRUMENTS]
+            concurrent.futures.wait(futs)
+    finally:
+        _refresh_running.clear()
 
 
 def _background_loop(refresh_seconds: int) -> None:

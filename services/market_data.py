@@ -107,6 +107,49 @@ def _get(url, params=None, timeout=12):
     return r.json()
 
 
+# ── yfinance TTL cache ───────────────────────────────────────────────────────────
+# Caches per (ticker, period, interval) for _YF_TTL seconds.
+# - Prevents concurrent refresh threads from all hitting Yahoo simultaneously.
+# - On upstream failure, returns the last successful DataFrame (stale fallback).
+
+_YF_TTL       = 55                # seconds — survive two 30 s refresh cycles
+_yf_cache_lock = threading.Lock()
+_yf_cache_data: dict = {}         # (ticker, period, interval) → {"hist": df, "ts": float}
+
+
+def _yf_fetch(ticker: str, period: str, interval: str):
+    """Fetch yfinance history with in-process TTL cache.
+
+    Returns a DataFrame (possibly stale on error) or None on total cold failure.
+    Never raises — callers should check `hist is None or hist.empty`.
+    """
+    if not YFINANCE_AVAILABLE:
+        return None
+
+    key = (ticker, period, interval)
+
+    with _yf_cache_lock:
+        entry = _yf_cache_data.get(key)
+        if entry and (time.monotonic() - entry["ts"]) < _YF_TTL:
+            return entry["hist"]
+
+    hist = None
+    try:
+        hist = yf.Ticker(ticker).history(period=period, interval=interval)
+    except Exception:
+        pass
+
+    if hist is not None and not hist.empty:
+        with _yf_cache_lock:
+            _yf_cache_data[key] = {"hist": hist, "ts": time.monotonic()}
+        return hist
+
+    # Upstream empty/failed — return stale cache if available, otherwise hist (may be empty)
+    with _yf_cache_lock:
+        entry = _yf_cache_data.get(key)
+    return entry["hist"] if entry else hist
+
+
 # ── Live price fetchers ──────────────────────────────────────────────────────────
 
 def _fetch_crypto_prices() -> dict:
@@ -122,15 +165,12 @@ def fetch_bitcoin():
     price = float(data["bitcoin"]["usd"])
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
-    if YFINANCE_AVAILABLE:
-        try:
-            hist = yf.Ticker("BTC-USD").history(period="1y", interval="1d")
-            closes = hist["Close"].dropna()
-            if len(closes) >= 2:
-                prev_price = float(closes.iloc[-2])
-                changes = _compute_changes(closes)
-        except Exception:
-            pass
+    hist = _yf_fetch("BTC-USD", "1y", "1d")
+    if hist is not None and not hist.empty:
+        closes = hist["Close"].dropna()
+        if len(closes) >= 2:
+            prev_price = float(closes.iloc[-2])
+            changes = _compute_changes(closes)
     return price, prev_price, changes
 
 
@@ -139,15 +179,12 @@ def fetch_ethereum():
     price = float(data["ethereum"]["usd"])
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
-    if YFINANCE_AVAILABLE:
-        try:
-            hist = yf.Ticker("ETH-USD").history(period="1y", interval="1d")
-            closes = hist["Close"].dropna()
-            if len(closes) >= 2:
-                prev_price = float(closes.iloc[-2])
-                changes = _compute_changes(closes)
-        except Exception:
-            pass
+    hist = _yf_fetch("ETH-USD", "1y", "1d")
+    if hist is not None and not hist.empty:
+        closes = hist["Close"].dropna()
+        if len(closes) >= 2:
+            prev_price = float(closes.iloc[-2])
+            changes = _compute_changes(closes)
     return price, prev_price, changes
 
 
@@ -156,30 +193,36 @@ def fetch_eurusd():
     price = float(data["rates"]["USD"])
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
-    if YFINANCE_AVAILABLE:
-        try:
-            hist = yf.Ticker("EURUSD=X").history(period="1y", interval="1d")
-            closes = hist["Close"].dropna()
-            if len(closes) >= 2:
-                prev_price = float(closes.iloc[-2])
-                changes = _compute_changes(closes)
-        except Exception:
-            pass
+    hist = _yf_fetch("EURUSD=X", "1y", "1d")
+    if hist is not None and not hist.empty:
+        closes = hist["Close"].dropna()
+        if len(closes) >= 2:
+            prev_price = float(closes.iloc[-2])
+            changes = _compute_changes(closes)
     return price, prev_price, changes
 
 
 def fetch_yf(ticker: str) -> tuple:
     if not YFINANCE_AVAILABLE:
         raise RuntimeError("yfinance not installed — run: pip install yfinance")
-    hist = yf.Ticker(ticker).history(period="1y", interval="1d")
-    if hist.empty:
+
+    # Primary: full year of daily closes for complete change calculations
+    hist = _yf_fetch(ticker, "1y", "1d")
+
+    # Fallback: shorter window handles futures near contract rollover (e.g. SI=F, BZ=F)
+    if hist is None or hist.empty:
+        hist = _yf_fetch(ticker, "5d", "1d")
+
+    if hist is None or hist.empty:
         raise ValueError(f"No data returned for {ticker}")
+
     closes = hist["Close"].dropna()
     if len(closes) < 1:
         raise ValueError(f"No close prices for {ticker}")
-    price = float(closes.iloc[-1])
+
+    price      = float(closes.iloc[-1])
     prev_price = float(closes.iloc[-2]) if len(closes) >= 2 else None
-    changes = _compute_changes(closes)
+    changes    = _compute_changes(closes)
     return price, prev_price, changes
 
 
@@ -272,27 +315,13 @@ def _history_eurusd(range_param: str) -> dict:
 
 
 def _history_yf(ticker: str, range_param: str) -> dict:
-    """Generic yfinance price history for any ticker, with one retry on failure."""
+    """Generic yfinance price history for any ticker, using TTL cache."""
     cfg  = _RANGE_YF_CFG.get(range_param, _RANGE_YF_CFG["1mo"])
-    hist = None
-    for attempt in range(2):
-        try:
-            hist = yf.Ticker(ticker).history(**cfg)
-            if not hist.empty:
-                break
-            if attempt == 0:
-                print(f"[WARN] Empty history for {ticker} ({range_param}), retrying…")
-                time.sleep(0.8)
-        except Exception as exc:
-            if attempt == 1:
-                raise
-            print(f"[WARN] History fetch error for {ticker} ({range_param}): {exc}, retrying…")
-            time.sleep(0.8)
+    hist = _yf_fetch(ticker, cfg["period"], cfg["interval"])
 
     # 1W fallback: try 2h interval if 1h returned empty
     if (hist is None or hist.empty) and range_param == "1w":
-        print(f"[WARN] Falling back to 2h interval for {ticker} 1W chart")
-        hist = yf.Ticker(ticker).history(period="5d", interval="2h")
+        hist = _yf_fetch(ticker, "5d", "2h")
 
     if hist is None or hist.empty:
         raise ValueError(f"No history for {ticker} ({range_param})")
