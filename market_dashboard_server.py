@@ -35,6 +35,7 @@ from services.user_data import (
     ensure_user_initialized, get_firm_entry, save_firm_entry,
     get_user_password, save_user_password,
     get_favorite_firms, save_favorite_firms,
+    get_user_firms,
 )
 
 app = Flask(__name__)
@@ -271,6 +272,13 @@ def api_news_search():
 
 
 # ── Private Workspace API ─────────────────────────────────────────────────────
+
+@app.route("/api/workspace/all", methods=["GET"])
+@login_required
+def api_workspace_all():
+    """Return all saved workspace data for the current user (all firms)."""
+    return jsonify(get_user_firms(session["user"]))
+
 
 @app.route("/api/workspace/<firm_key>", methods=["GET"])
 @login_required

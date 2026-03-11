@@ -1213,6 +1213,45 @@ body {
 .contact-result-title { font-size: 0.75rem; color: var(--muted); }
 .contact-result-loc { font-size: 0.75rem; color: var(--dim); }
 
+/* ── Contact note history ────────────────────────────────────── */
+.contact-note-history {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.contact-note-entry {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.contact-note-ts {
+  font-size: 0.63rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--dim);
+}
+.contact-note-text {
+  font-size: 0.78rem; color: var(--muted); line-height: 1.5;
+  white-space: pre-wrap;
+}
+.contact-note-legacy .contact-note-ts { color: var(--dim); font-style: italic; }
+
+/* ── Add-note form (inline per contact) ─────────────────────── */
+.contact-addnote-form {
+  margin-top: 8px; display: flex; flex-direction: column; gap: 6px;
+}
+.contact-addnote-textarea {
+  width: 100%; resize: vertical; min-height: 60px;
+  font-family: inherit; font-size: 0.82rem;
+}
+.contact-addnote-actions { display: flex; gap: 6px; }
+.workspace-btn-addnote {
+  margin-top: 8px;
+  font-family: inherit; font-size: 0.72rem; font-weight: 600;
+  color: var(--accent, #3b82f6); background: none; border: none;
+  cursor: pointer; padding: 0; letter-spacing: 0.02em;
+  opacity: 0.8; transition: opacity 0.15s;
+}
+.workspace-btn-addnote:hover { opacity: 1; }
+.workspace-form-opt { font-size: 0.68rem; font-weight: 400; color: var(--dim); }
+
 .firm-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

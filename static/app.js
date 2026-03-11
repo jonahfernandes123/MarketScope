@@ -1553,8 +1553,8 @@ const ALL_FIRMS = [...FEATURED_FIRMS, ..._EXTRA_FIRMS, ...FEATURED_BANKS, ..._EX
 const _FIRMS_MAP = Object.fromEntries(ALL_FIRMS.map(f => [f.key, f]));
 
 let _firmsSearchQuery = '';
-let _firmsCategoryFilter = new Set(['Trading House', 'Hedge Fund', 'Bank']);
-const _contactsIndex = {}; // firmKey → contacts array (populated as modals are opened)
+let _firmsCategoryFilter = null; // null = default featured view; string = focused category
+const _contactsIndex = {}; // firmKey → contacts array
 
 function setFirmsSearch(val) {
   _firmsSearchQuery = val;
@@ -1562,17 +1562,7 @@ function setFirmsSearch(val) {
 }
 
 function toggleFirmCategoryFilter(cat) {
-  if (_firmsCategoryFilter.has(cat)) {
-    _firmsCategoryFilter.delete(cat);
-    if (_firmsCategoryFilter.size === 0) {
-      // Prevent empty state — reset to all
-      _firmsCategoryFilter.add('Trading House');
-      _firmsCategoryFilter.add('Hedge Fund');
-      _firmsCategoryFilter.add('Bank');
-    }
-  } else {
-    _firmsCategoryFilter.add(cat);
-  }
+  _firmsCategoryFilter = (_firmsCategoryFilter === cat) ? null : cat;
   _updateFilterPills();
   renderFirmsPage();
 }
@@ -1580,9 +1570,24 @@ function toggleFirmCategoryFilter(cat) {
 function _updateFilterPills() {
   ['Trading House', 'Hedge Fund', 'Bank'].forEach(cat => {
     const btn = document.getElementById('fpill-' + cat);
-    if (btn) btn.classList.toggle('active', _firmsCategoryFilter.has(cat));
+    if (btn) btn.classList.toggle('active', _firmsCategoryFilter === cat);
   });
 }
+
+// Pre-load all saved contacts into the index so search works immediately
+async function _loadAllContactsIndex() {
+  const res = await apiFetch('/api/workspace/all');
+  if (!res) return;
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') return;
+  Object.entries(data).forEach(([firmKey, fw]) => {
+    if (_FIRMS_MAP[firmKey] && Array.isArray(fw.contacts) && fw.contacts.length) {
+      _contactsIndex[firmKey] = fw.contacts;
+    }
+  });
+  if (_firmsSearchQuery.trim()) renderFirmsPage();
+}
+_loadAllContactsIndex();
 
 /* ── Favorites ─────────────────────────────────────────────────────────────── */
 let _favoriteFirms = [];  // array of firm keys, per-user, loaded from server
@@ -1658,44 +1663,63 @@ function renderFirmsPage() {
   const el = document.getElementById('firms-page-body');
   if (!el) return;
 
-  const q = _firmsSearchQuery.toLowerCase().trim();
+  const q      = _firmsSearchQuery.toLowerCase().trim();
+  const inCat  = f => !_firmsCategoryFilter || f.category === _firmsCategoryFilter;
 
   if (!q) {
     let html = '';
 
-    // User's personal favorites section (shown first if any exist, respecting filter)
-    const favFirms = _favoriteFirms.map(k => _FIRMS_MAP[k]).filter(Boolean)
-      .filter(f => _firmsCategoryFilter.has(f.category));
-    if (favFirms.length) {
-      html += `<div class="page-section-heading">Your Favorites</div>`;
-      html += '<div class="firm-grid">';
-      favFirms.forEach(f => { html += _firmCardHtml(f); });
-      html += '</div>';
-    }
-
-    // Featured firms grouped by category, 8 per group
-    const categories = [
-      { key: 'Trading House', label: 'Featured Commodity Trading Houses', src: FEATURED_FIRMS },
-      { key: 'Hedge Fund',    label: 'Featured Hedge Funds',              src: FEATURED_FIRMS },
-      { key: 'Bank',          label: 'Featured Banks',                    src: FEATURED_BANKS },
-    ];
-    categories.forEach(cat => {
-      if (!_firmsCategoryFilter.has(cat.key)) return;
-      const firms = cat.src.filter(f => f.category === cat.key).slice(0, 8);
-      if (!firms.length) return;
-      html += `<div class="page-section-heading">${cat.label}</div>`;
+    if (_firmsCategoryFilter) {
+      // Focused category view — show ALL firms of that category
+      const catLabels = {
+        'Trading House': 'All Commodity Trading Houses',
+        'Hedge Fund':    'All Hedge Funds',
+        'Bank':          'All Banks',
+      };
+      const favFirms = _favoriteFirms.map(k => _FIRMS_MAP[k]).filter(Boolean)
+        .filter(f => f.category === _firmsCategoryFilter);
+      if (favFirms.length) {
+        html += `<div class="page-section-heading">Your Favorites</div>`;
+        html += '<div class="firm-grid">';
+        favFirms.forEach(f => { html += _firmCardHtml(f); });
+        html += '</div>';
+      }
+      const firms = ALL_FIRMS.filter(f => f.category === _firmsCategoryFilter);
+      html += `<div class="page-section-heading">${catLabels[_firmsCategoryFilter] || _firmsCategoryFilter}</div>`;
       html += '<div class="firm-grid">';
       firms.forEach(f => { html += _firmCardHtml(f); });
       html += '</div>';
-    });
-    if (!html) html = `<div class="firms-empty-state">No categories selected.</div>`;
+    } else {
+      // Default featured grouped view
+      const favFirms = _favoriteFirms.map(k => _FIRMS_MAP[k]).filter(Boolean);
+      if (favFirms.length) {
+        html += `<div class="page-section-heading">Your Favorites</div>`;
+        html += '<div class="firm-grid">';
+        favFirms.forEach(f => { html += _firmCardHtml(f); });
+        html += '</div>';
+      }
+      const categories = [
+        { key: 'Trading House', label: 'Featured Commodity Trading Houses', src: FEATURED_FIRMS },
+        { key: 'Hedge Fund',    label: 'Featured Hedge Funds',              src: FEATURED_FIRMS },
+        { key: 'Bank',          label: 'Featured Banks',                    src: FEATURED_BANKS },
+      ];
+      categories.forEach(cat => {
+        const firms = cat.src.filter(f => f.category === cat.key).slice(0, 8);
+        if (!firms.length) return;
+        html += `<div class="page-section-heading">${cat.label}</div>`;
+        html += '<div class="firm-grid">';
+        firms.forEach(f => { html += _firmCardHtml(f); });
+        html += '</div>';
+      });
+    }
+
     el.innerHTML = html;
     return;
   }
 
-  // Search across ALL_FIRMS (respecting category filter)
+  // ── Search mode ─────────────────────────────────────────────────────────────
   const filteredFirms = ALL_FIRMS.filter(f =>
-    _firmsCategoryFilter.has(f.category) && (
+    inCat(f) && (
       f.name.toLowerCase().includes(q)
       || (f.fullName || '').toLowerCase().includes(q)
       || (f.category || '').toLowerCase().includes(q)
@@ -1704,17 +1728,22 @@ function renderFirmsPage() {
     )
   );
 
-  // Search contacts index (respecting category filter)
+  // Search contacts index
   const filteredContacts = [];
   Object.entries(_contactsIndex).forEach(([firmKey, contacts]) => {
     const firm = _FIRMS_MAP[firmKey];
-    if (!firm || !_firmsCategoryFilter.has(firm.category)) return;
+    if (!firm || !inCat(firm)) return;
     contacts.forEach(c => {
       if (!c.name) return;
+      const noteTexts = [
+        c.notes || c.description || '',
+        ...(Array.isArray(c.note_history) ? c.note_history.map(n => n.text || '') : []),
+      ].join(' ');
       if (
         c.name.toLowerCase().includes(q)
-        || (c.title || '').toLowerCase().includes(q)
+        || (c.title    || '').toLowerCase().includes(q)
         || (c.location || '').toLowerCase().includes(q)
+        || noteTexts.toLowerCase().includes(q)
       ) filteredContacts.push({ contact: c, firm });
     });
   });
@@ -1791,6 +1820,7 @@ let _fwKey           = null;
 let _fwData          = { notes: '', contacts: [] };
 let _fwAddingContact = false;
 let _fwEditingIdx    = null;   // null = not editing; integer = index in _fwData.contacts
+let _fwAddingNoteIdx = null;   // null = not adding note; integer = contact index receiving new note
 let _fwContactSort   = 'name';
 let _fwSearchQuery   = '';
 
@@ -1803,6 +1833,7 @@ function openFirmModal(key) {
   _fwData          = { notes: '', contacts: [] };
   _fwAddingContact = false;
   _fwEditingIdx    = null;
+  _fwAddingNoteIdx = null;
   _fwContactSort   = 'name';
   _fwSearchQuery   = '';
 
@@ -1971,7 +2002,6 @@ function _renderFirmWorkspace() {
 
     // Contact card builder — idx is the original array index (for edit/delete targeting)
     const _cardHtml = (c, idx, showLocation = true) => {
-      const notes    = c.notes || c.description || '';
       const liLink   = c.linkedin_url
         ? `<a class="workspace-contact-linkedin" href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" title="LinkedIn profile">${_liSvg}</a>`
         : '';
@@ -1981,13 +2011,50 @@ function _renderFirmWorkspace() {
       const editBtn   = `<button class="fw-edit-btn"   onclick="editFirmContact(${idx})"   title="Edit contact">${_pencilSvg}</button>`;
       const deleteBtn = `<button class="fw-delete-btn" onclick="deleteFirmContact(${idx})" title="Delete contact">${_trashSvg}</button>`;
       const expLabel  = c.years_experience ? `<span class="workspace-contact-exp">${esc(String(c.years_experience))} yrs exp</span>` : '';
+
+      // Note history — new entries + backward-compat legacy notes field
+      const noteHistory  = Array.isArray(c.note_history) ? c.note_history : [];
+      const legacyNote   = (c.notes || c.description || '').trim();
+      let noteHistoryHtml = '';
+      if (noteHistory.length || legacyNote) {
+        noteHistoryHtml += '<div class="contact-note-history">';
+        // Newest first
+        [...noteHistory].reverse().forEach(entry => {
+          const ts = entry.ts ? _relativeDate(entry.ts) : '';
+          noteHistoryHtml += `<div class="contact-note-entry">
+            ${ts ? `<span class="contact-note-ts">${esc(ts)}</span>` : ''}
+            <span class="contact-note-text">${esc(entry.text || '')}</span>
+          </div>`;
+        });
+        // Legacy single-string note shown only when no structured history
+        if (legacyNote && !noteHistory.length) {
+          noteHistoryHtml += `<div class="contact-note-entry contact-note-legacy">
+            <span class="contact-note-ts">note</span>
+            <span class="contact-note-text">${esc(legacyNote)}</span>
+          </div>`;
+        }
+        noteHistoryHtml += '</div>';
+      }
+
+      // Inline add-note form or button
+      const addNoteSection = _fwAddingNoteIdx === idx
+        ? `<div class="contact-addnote-form">
+            <textarea class="workspace-input contact-addnote-textarea" id="fw-addnote-${idx}" placeholder="Add a note\u2026" rows="3"></textarea>
+            <div class="contact-addnote-actions">
+              <button class="workspace-btn-primary" onclick="saveContactNote(${idx})">Save note</button>
+              <button class="workspace-btn-ghost"   onclick="cancelAddNote()">Cancel</button>
+            </div>
+          </div>`
+        : `<button class="workspace-btn-addnote" onclick="startAddNote(${idx})">+ Add note</button>`;
+
       return `<div class="workspace-contact-card">
         <div class="fw-card-actions">${editBtn}${deleteBtn}</div>
         <div class="workspace-contact-name">${esc(c.name)}${liLink}${emailLink}</div>
         ${c.title ? `<div class="workspace-contact-title">${esc(c.title)}${expLabel ? `&ensp;${expLabel}` : ''}</div>` : (expLabel ? `<div class="workspace-contact-title">${expLabel}</div>` : '')}
         ${c.phone  ? `<div class="workspace-contact-phone">${esc(c.phone)}</div>` : ''}
-        ${notes    ? `<div class="workspace-contact-notes">${esc(notes)}</div>` : ''}
         ${showLocation && c.location ? `<div class="workspace-contact-location">${esc(c.location)}</div>` : ''}
+        ${noteHistoryHtml}
+        ${addNoteSection}
       </div>`;
     };
 
@@ -2054,10 +2121,10 @@ function _renderFirmWorkspace() {
         <label class="workspace-form-label">Job Title</label>
         <input class="workspace-input" id="fw-cf-title" type="text" placeholder="e.g. Head of Trading" value="${esc(pre.title || '')}">
       </div>
-      <div class="workspace-form-field">
-        <label class="workspace-form-label">Notes</label>
-        <input class="workspace-input" id="fw-cf-desc" type="text" placeholder="Context, relationship, how you met\u2026" value="${esc(pre.notes || pre.description || '')}">
-      </div>
+      ${!isEditing ? `<div class="workspace-form-field">
+        <label class="workspace-form-label">Initial note <span class="workspace-form-opt">(optional)</span></label>
+        <input class="workspace-input" id="fw-cf-desc" type="text" placeholder="Context, relationship, how you met\u2026">
+      </div>` : ''}
       <div class="workspace-form-field">
         <label class="workspace-form-label">Location</label>
         <input class="workspace-input" id="fw-cf-location" type="text" placeholder="City or office" value="${esc(pre.location || '')}">
@@ -2155,6 +2222,7 @@ function hideFirmContactForm() {
 function editFirmContact(idx) {
   _syncFwNotes();
   _fwAddingContact = false;   // mutually exclusive with add
+  _fwAddingNoteIdx = null;
   _fwEditingIdx    = idx;
   _renderFirmWorkspace();
 }
@@ -2171,6 +2239,9 @@ function deleteFirmContact(idx) {
   _fwData.contacts.splice(idx, 1);
   if (_fwEditingIdx === idx) _fwEditingIdx = null;
   else if (_fwEditingIdx !== null && _fwEditingIdx > idx) _fwEditingIdx--;
+  if (_fwAddingNoteIdx === idx) _fwAddingNoteIdx = null;
+  else if (_fwAddingNoteIdx !== null && _fwAddingNoteIdx > idx) _fwAddingNoteIdx--;
+  _contactsIndex[_fwKey] = _fwData.contacts;
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2193,8 +2264,14 @@ function saveEditedContact() {
     if (el) { el.focus(); el.classList.add('workspace-input-err'); }
     return;
   }
-  _fwData.contacts[_fwEditingIdx] = { name, title, notes: desc, location, phone, email, years_experience, linkedin_url };
+  const existing = _fwData.contacts[_fwEditingIdx];
+  _fwData.contacts[_fwEditingIdx] = {
+    name, title, location, phone, email, years_experience, linkedin_url,
+    notes:        existing.notes || '',
+    note_history: existing.note_history || [],
+  };
   _fwEditingIdx = null;
+  _contactsIndex[_fwKey] = _fwData.contacts;
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2217,8 +2294,10 @@ function saveFirmContact() {
     if (el) { el.focus(); el.classList.add('workspace-input-err'); }
     return;
   }
-  _fwData.contacts.push({ name, title, notes: desc, location, phone, email, years_experience, linkedin_url });
+  const note_history = desc ? [{ text: desc, ts: new Date().toISOString() }] : [];
+  _fwData.contacts.push({ name, title, notes: '', note_history, location, phone, email, years_experience, linkedin_url });
   _fwAddingContact = false;
+  _contactsIndex[_fwKey] = _fwData.contacts;
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2235,6 +2314,38 @@ function setFwSort(field) {
 function setFwSearch(val) {
   _fwSearchQuery = val;
   _renderFirmWorkspace();
+}
+
+function startAddNote(idx) {
+  _syncFwNotes();
+  _fwAddingNoteIdx = idx;
+  _renderFirmWorkspace();
+  setTimeout(() => {
+    const ta = document.getElementById('fw-addnote-' + idx);
+    if (ta) ta.focus();
+  }, 30);
+}
+
+function cancelAddNote() {
+  _fwAddingNoteIdx = null;
+  _renderFirmWorkspace();
+}
+
+function saveContactNote(idx) {
+  const textarea = document.getElementById('fw-addnote-' + idx);
+  const text = (textarea?.value || '').trim();
+  if (!text) { if (textarea) textarea.focus(); return; }
+  _syncFwNotes();
+  const contact = _fwData.contacts[idx];
+  if (!Array.isArray(contact.note_history)) contact.note_history = [];
+  contact.note_history.push({ text, ts: new Date().toISOString() });
+  _fwAddingNoteIdx = null;
+  _contactsIndex[_fwKey] = _fwData.contacts;
+  apiFetch('/api/workspace/' + _fwKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(_fwData),
+  }).then(() => _renderFirmWorkspace());
 }
 
 /* ── Summary (macro / geopolitical / outlook) ──────────────────────────────── */
