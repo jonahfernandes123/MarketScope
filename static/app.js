@@ -1352,7 +1352,195 @@ const _EXTRA_FIRMS = [
   },
 ];
 
-const ALL_FIRMS = [...FEATURED_FIRMS, ..._EXTRA_FIRMS];
+// ── Featured Banks (8 — shown on default Firms page) ─────────────────────────
+const FEATURED_BANKS = [
+  {
+    key: 'goldmansachs', name: 'Goldman Sachs', fullName: 'The Goldman Sachs Group, Inc.',
+    category: 'Bank', region: 'US', hq: 'New York',
+    initials: 'GS', color: '#1a1a2e',
+    tagline: 'Global investment bank, securities, and investment management',
+    overview: "Goldman Sachs is one of the world's premier investment banks, founded in 1869. Known for its dominance in M&A advisory, securities underwriting, and FICC trading, Goldman built one of the largest commodity trading franchises on Wall Street before scaling it back post-2008 regulation. Its Global Markets division remains a major force in commodity derivatives, energy, and metals. The firm manages over $2.5 trillion in assets and is a defining institution of global finance.",
+    markets: ['Investment Banking', 'FICC & Commodities', 'Equities', 'Asset Management', 'Transaction Banking'],
+    offices: ['New York', 'London', 'Hong Kong', 'Tokyo', 'Singapore', 'Frankfurt', 'Dubai'],
+  },
+  {
+    key: 'jpmorgan', name: 'JPMorgan', fullName: 'JPMorgan Chase & Co.',
+    category: 'Bank', region: 'US', hq: 'New York',
+    initials: 'JP', color: '#003087',
+    tagline: "America's largest bank by assets with a global markets powerhouse",
+    overview: "JPMorgan Chase is the largest US bank by assets and one of the most systemically important financial institutions in the world. Its investment banking arm, J.P. Morgan, is consistently ranked No. 1 globally in investment banking fees. JPMorgan maintains a major presence in commodity markets — energy financing, metals, agricultural commodities — through both its Markets division and extensive corporate banking relationships with commodity producers and traders.",
+    markets: ['Investment Banking', 'Markets (FICC + Equities)', 'Commercial Banking', 'Asset & Wealth Management', 'Treasury Services'],
+    offices: ['New York', 'London', 'Hong Kong', 'Singapore', 'São Paulo', 'Mumbai', 'Dubai'],
+  },
+  {
+    key: 'morganstanley', name: 'Morgan Stanley', fullName: 'Morgan Stanley',
+    category: 'Bank', region: 'US', hq: 'New York',
+    initials: 'MS', color: '#003087',
+    tagline: 'Global investment bank with leading wealth and institutional securities businesses',
+    overview: "Morgan Stanley is a global financial services firm with major positions in institutional securities, wealth management, and investment management. Its Commodities division — historically among the largest on Wall Street — covers energy, metals, and agricultural derivatives. Morgan Stanley serves commodity producers, traders, and end-users through structured financing, derivatives, and risk management solutions alongside its core investment banking and markets franchise.",
+    markets: ['Institutional Securities', 'Commodities & FICC', 'Wealth Management', 'Investment Management', 'Equities'],
+    offices: ['New York', 'London', 'Tokyo', 'Hong Kong', 'Sydney', 'Frankfurt', 'Dubai'],
+  },
+  {
+    key: 'citi', name: 'Citi', fullName: 'Citigroup Inc.',
+    category: 'Bank', region: 'US', hq: 'New York',
+    initials: 'CI', color: '#003f88',
+    tagline: 'Global bank with one of the widest geographic and commodities footprints',
+    overview: "Citi is one of the most globally connected banks in the world, operating in 160+ countries. Its Institutional Clients Group (ICG) provides investment banking, capital markets, and trade finance services to corporations, governments, and institutional investors. Citi's commodities business spans energy, metals, and agricultural derivatives, with particular strength in trade finance and structured commodity solutions for producers and sovereign exporters.",
+    markets: ['Markets & Securities Services', 'Commodity Trade Finance', 'Banking Capital Markets & Advisory', 'FICC', 'Treasury & Trade Solutions'],
+    offices: ['New York', 'London', 'Hong Kong', 'Singapore', 'Dubai', 'Mexico City', 'Mumbai'],
+  },
+  {
+    key: 'bofa', name: 'Bank of America', fullName: 'Bank of America Corporation',
+    category: 'Bank', region: 'US', hq: 'Charlotte, NC',
+    initials: 'BA', color: '#e31837',
+    tagline: 'Major US bank with a large global markets and natural resources franchise',
+    overview: "Bank of America is one of the largest US banks by assets and deposits, with a major investment banking operation under its BofA Securities brand. The bank has significant exposure to commodity markets through its Global Markets division, particularly energy and natural resources lending and derivatives. BofA provides financing, hedging, and advisory services to oil companies, utilities, mining firms, and agricultural businesses globally.",
+    markets: ['Global Markets (FICC)', 'Investment Banking', 'Natural Resources Financing', 'Equities', 'Wealth Management'],
+    offices: ['Charlotte', 'New York', 'London', 'Hong Kong', 'Tokyo', 'Singapore', 'Sydney'],
+  },
+  {
+    key: 'barclays', name: 'Barclays', fullName: 'Barclays PLC',
+    category: 'Bank', region: 'Europe', hq: 'London',
+    initials: 'BA', color: '#00aeef',
+    tagline: 'British bank with a major global investment banking and commodity derivatives operation',
+    overview: "Barclays is a major British universal bank with a significant global investment banking division (Barclays Investment Bank). Its commodity franchise is particularly strong in energy derivatives, metals, and structured commodity finance, with deep roots in the power markets and a major presence in EMEA commodity trade flows. Barclays also provides commodity index products and structured solutions to institutional investors and corporates globally.",
+    markets: ['Investment Banking', 'FICC & Commodities', 'Energy & Power Derivatives', 'Equities', 'Private & Corporate Banking'],
+    offices: ['London', 'New York', 'Hong Kong', 'Singapore', 'Frankfurt', 'Dubai', 'Tokyo'],
+  },
+  {
+    key: 'bnpparibas', name: 'BNP Paribas', fullName: 'BNP Paribas S.A.',
+    category: 'Bank', region: 'Europe', hq: 'Paris',
+    initials: 'BN', color: '#00965e',
+    tagline: "Europe's largest bank by assets with a leading commodity trade finance business",
+    overview: "BNP Paribas is the largest European bank by assets and a dominant force in commodity trade finance. Its Corporate & Institutional Banking (CIB) division serves commodity traders, producers, and processors globally — with particular strength in financing oil, gas, metals, and agricultural commodity flows. BNP Paribas is consistently ranked among the top global banks for commodity trade finance and has a significant presence in structured energy and metals derivatives.",
+    markets: ['Commodity Trade Finance', 'Energy & Natural Resources', 'FICC', 'Investment Banking', 'Corporate Banking'],
+    offices: ['Paris', 'London', 'New York', 'Hong Kong', 'Singapore', 'Geneva', 'Dubai'],
+  },
+  {
+    key: 'socgen', name: 'Société Générale', fullName: 'Société Générale S.A.',
+    category: 'Bank', region: 'Europe', hq: 'Paris',
+    initials: 'SG', color: '#e4032d',
+    tagline: 'French bank renowned for commodity derivatives, structured products, and energy financing',
+    overview: "Société Générale (SocGen) is a major French bank with a globally recognised derivatives franchise. SocGen's Global Markets division is particularly strong in commodity structured products, energy derivatives, and metals — historically ranking among the most innovative banks in this space. Its Natural Resources & Energy team provides financing, hedging, and advisory services to commodity producers and trading houses globally, and SocGen is a major provider of commodity index and structured note products.",
+    markets: ['Commodity Derivatives', 'Energy & Natural Resources', 'FICC', 'Structured Products', 'Investment Banking'],
+    offices: ['Paris', 'London', 'New York', 'Hong Kong', 'Singapore', 'Geneva', 'Moscow'],
+  },
+];
+
+// ── Extended bank database (searchable, not featured by default) ───────────────
+const _EXTRA_BANKS = [
+  {
+    key: 'deutschebank', name: 'Deutsche Bank', fullName: 'Deutsche Bank AG',
+    category: 'Bank', region: 'Europe', hq: 'Frankfurt',
+    initials: 'DB', color: '#0074c8',
+    tagline: 'German universal bank with a significant global markets and commodities operation',
+    overview: "Deutsche Bank is Germany's largest bank and a major player in global fixed income, currencies, and commodities (FICC) markets. Despite significant restructuring since 2019, Deutsche Bank maintains a meaningful commodity derivatives and trade finance operation, particularly in energy, metals, and agricultural finance in EMEA and Asia. Its Corporate Bank provides structured trade finance solutions to commodity producers and traders.",
+    markets: ['FICC & Commodities', 'Investment Banking', 'Corporate Banking', 'Trade Finance', 'Equities'],
+    offices: ['Frankfurt', 'London', 'New York', 'Singapore', 'Hong Kong', 'Dubai'],
+  },
+  {
+    key: 'hsbc', name: 'HSBC', fullName: 'HSBC Holdings plc',
+    category: 'Bank', region: 'Europe', hq: 'London',
+    initials: 'HS', color: '#db0011',
+    tagline: "World's largest trade finance bank with unmatched Asia-Pacific reach",
+    overview: "HSBC is one of the world's largest banks by assets, with its roots in the Hong Kong and Shanghai Banking Corporation. It is consistently ranked as the No. 1 global trade finance bank and a dominant force in commodity trade finance — particularly for Asian commodities flows (metals, energy, agricultural products). HSBC's Global Banking and Markets division provides significant commodity-linked financing, derivatives, and advisory services with particular depth in China, Southeast Asia, and the Middle East.",
+    markets: ['Trade Finance & Commodities', 'FICC', 'Investment Banking', 'Wealth & Personal Banking', 'Global Payments'],
+    offices: ['London', 'Hong Kong', 'Singapore', 'Dubai', 'New York', 'Paris', 'Shanghai'],
+  },
+  {
+    key: 'ubs', name: 'UBS', fullName: 'UBS Group AG',
+    category: 'Bank', region: 'Europe', hq: 'Zurich',
+    initials: 'UB', color: '#e00101',
+    tagline: 'Swiss bank and wealth management giant with global investment banking capabilities',
+    overview: "UBS is the world's largest wealth manager and a leading Swiss universal bank. Following the emergency acquisition of Credit Suisse in 2023, UBS significantly expanded its investment banking and markets capabilities. UBS provides commodity-linked structured products, financing, and derivatives to institutional clients and ultra-high-net-worth individuals. Its Investment Bank division covers FICC (including commodities), equities, and advisory, while the expanded platform includes Credit Suisse's commodity trade finance book.",
+    markets: ['Wealth Management', 'Investment Banking', 'FICC & Commodities', 'Equities', 'Asset Management'],
+    offices: ['Zurich', 'London', 'New York', 'Hong Kong', 'Singapore', 'Tokyo', 'Geneva'],
+  },
+  {
+    key: 'stanchart', name: 'Standard Chartered', fullName: 'Standard Chartered PLC',
+    category: 'Bank', region: 'Europe', hq: 'London',
+    initials: 'SC', color: '#1d8348',
+    tagline: 'Emerging markets bank with strong commodity trade finance and Asian metals flows',
+    overview: "Standard Chartered is a British international bank with its primary operations across Asia, Africa, and the Middle East. Its Financial Markets and Corporate Finance divisions are major providers of commodity trade finance — particularly for metals, energy, and soft commodities in high-growth Asian and African markets. Standard Chartered is a key financier of commodity flows in corridors underserved by US and European banks, with particular strength in precious metals, base metals, and agricultural commodity finance.",
+    markets: ['Commodity Trade Finance', 'Financial Markets', 'Transaction Banking', 'Corporate Finance', 'Metals & Mining Finance'],
+    offices: ['London', 'Singapore', 'Hong Kong', 'Dubai', 'Mumbai', 'Shanghai', 'Nairobi'],
+  },
+  {
+    key: 'macquarie', name: 'Macquarie', fullName: 'Macquarie Group Limited',
+    category: 'Bank', region: 'Asia-Pacific', hq: 'Sydney',
+    initials: 'MQ', color: '#006633',
+    tagline: 'Australian bank and one of the world\'s largest commodity trading and financing groups',
+    overview: "Macquarie Group is an Australian-origin global financial services group that has built one of the world's largest commodity trading and financing businesses outside the traditional Wall Street and European banking giants. Its Commodities and Global Markets (CGM) division spans physical commodity trading, risk management, and financing across energy, metals, and agricultural markets. Macquarie is a major principal in commodity markets — particularly gas, power, and LNG — and provides sophisticated hedging and financing solutions to producers, traders, and consumers globally.",
+    markets: ['Commodity Trading & Risk Management', 'Energy & Power', 'Metals & Mining Finance', 'Agricultural Finance', 'Infrastructure'],
+    offices: ['Sydney', 'London', 'New York', 'Houston', 'Singapore', 'Hong Kong', 'Tokyo'],
+  },
+  {
+    key: 'wellsfargo', name: 'Wells Fargo', fullName: 'Wells Fargo & Company',
+    category: 'Bank', region: 'US', hq: 'San Francisco, CA',
+    initials: 'WF', color: '#d71e28',
+    tagline: 'Major US bank with significant energy lending and commodity trade finance capabilities',
+    overview: "Wells Fargo is one of the largest US banks by deposits and a major provider of commercial banking, lending, and capital markets services. Its Corporate & Investment Banking division provides energy lending, commodity trade finance, and structured products to oil, gas, mining, and agricultural companies. Wells Fargo has particular depth in US energy sector financing — from upstream exploration to midstream infrastructure — and provides commodity risk management solutions to US producers and end-users.",
+    markets: ['Energy Lending', 'Commercial Banking', 'Capital Markets', 'Commodity Trade Finance', 'FICC'],
+    offices: ['San Francisco', 'New York', 'Houston', 'Charlotte', 'London', 'Hong Kong'],
+  },
+  {
+    key: 'rbc', name: 'RBC Capital Markets', fullName: 'RBC Capital Markets',
+    category: 'Bank', region: 'Americas', hq: 'Toronto',
+    initials: 'RB', color: '#002d72',
+    tagline: "Canada's leading investment bank with major energy and mining capabilities",
+    overview: "RBC Capital Markets is the investment banking arm of Royal Bank of Canada, consistently ranked as one of the top investment banks in North America. It has particular depth in energy, mining, and natural resources — reflecting Canada's position as a major commodity producer. RBC advises on and finances oil & gas, mining, and infrastructure projects globally, and provides commodity derivatives and structured solutions to producers, royalty companies, and commodity-linked corporates.",
+    markets: ['Energy & Natural Resources', 'Mining & Metals', 'Investment Banking', 'FICC', 'Equities'],
+    offices: ['Toronto', 'New York', 'London', 'Sydney', 'Hong Kong', 'Singapore', 'Calgary'],
+  },
+  {
+    key: 'natixis', name: 'Natixis', fullName: 'Natixis S.A.',
+    category: 'Bank', region: 'Europe', hq: 'Paris',
+    initials: 'NA', color: '#8b0000',
+    tagline: 'French bank with a strong commodity trade finance and structured energy franchise',
+    overview: "Natixis is the corporate and investment banking arm of Groupe BPCE, France's second-largest banking group. Its Global markets division has a notable presence in commodity structured products and energy derivatives, while its Commodity Finance team is an active provider of trade finance for oil, metals, and soft commodities. Natixis is particularly active in structured commodity transactions, reserve-based lending for energy producers, and commodity-linked structured notes.",
+    markets: ['Commodity Trade Finance', 'Energy & Natural Resources', 'FICC', 'Structured Products', 'Investment Banking'],
+    offices: ['Paris', 'London', 'New York', 'Hong Kong', 'Singapore', 'Dubai'],
+  },
+  {
+    key: 'mufg', name: 'MUFG', fullName: 'Mitsubishi UFJ Financial Group',
+    category: 'Bank', region: 'Asia-Pacific', hq: 'Tokyo',
+    initials: 'MU', color: '#e20012',
+    tagline: "Japan's largest bank with global energy, metals, and trade finance capabilities",
+    overview: "MUFG (Mitsubishi UFJ Financial Group) is Japan's largest and the world's second-largest bank by assets. Its Global Corporate & Investment Banking division provides energy project finance, metals financing, and commodity trade finance globally, with particular strength in LNG financing (Japan being the world's largest LNG importer), mining project finance, and trade finance for Asian commodity flows. MUFG's global network spans over 50 countries, making it a critical financing partner for commodity supply chains connecting Asia with producing regions.",
+    markets: ['Energy Project Finance', 'Trade Finance', 'Metals & Mining', 'Investment Banking', 'FICC'],
+    offices: ['Tokyo', 'New York', 'London', 'Hong Kong', 'Singapore', 'Sydney', 'Dubai'],
+  },
+  {
+    key: 'nomura', name: 'Nomura', fullName: 'Nomura Holdings, Inc.',
+    category: 'Bank', region: 'Asia-Pacific', hq: 'Tokyo',
+    initials: 'NO', color: '#1a1a6e',
+    tagline: "Japan's leading investment bank with global markets and commodities operations",
+    overview: "Nomura is Japan's largest investment bank and one of the most significant Asia-headquartered financial institutions globally. Its Wholesale division provides institutional investors with fixed income, equities, and commodity-linked products. Nomura has a notable presence in commodity derivatives — particularly precious metals, energy, and agricultural products — through its Global Markets division, and provides structured commodity solutions to Japanese and international institutional clients and corporates.",
+    markets: ['Fixed Income & Commodities', 'Equities', 'Investment Banking', 'Asset Management', 'Structured Products'],
+    offices: ['Tokyo', 'New York', 'London', 'Hong Kong', 'Singapore', 'Mumbai', 'Dubai'],
+  },
+  {
+    key: 'ing', name: 'ING', fullName: 'ING Group N.V.',
+    category: 'Bank', region: 'Europe', hq: 'Amsterdam',
+    initials: 'IN', color: '#ff6600',
+    tagline: 'Dutch bank and one of Europe\'s largest commodity trade finance providers',
+    overview: "ING is a Dutch multinational bank and a major provider of commodity trade finance in Europe and globally. Its Commodity Trade Finance division finances agricultural, energy, and metals commodity flows for traders, producers, and processors. ING is particularly strong in soft commodities (grains, oilseeds, sugar), energy trade finance, and structured commodity transactions. The bank is consistently ranked among the top European banks for commodity trade finance by notional volume.",
+    markets: ['Commodity Trade Finance', 'Agricultural Finance', 'Energy Finance', 'Structured Finance', 'Corporate Lending'],
+    offices: ['Amsterdam', 'London', 'Singapore', 'Geneva', 'New York', 'Hong Kong', 'Dubai'],
+  },
+  {
+    key: 'abnamro', name: 'ABN AMRO', fullName: 'ABN AMRO Bank N.V.',
+    category: 'Bank', region: 'Europe', hq: 'Amsterdam',
+    initials: 'AA', color: '#009286',
+    tagline: 'Dutch bank with specialist expertise in commodity trade finance and energy transition',
+    overview: "ABN AMRO is a leading Dutch bank with longstanding expertise in commodity trade finance, particularly for metals, soft commodities, and energy products. Its Trade & Commodity Finance team has strong relationships with major commodity trading houses in Geneva, Singapore, and Houston. ABN AMRO is also positioning as a financing partner for the energy transition — providing green commodity finance, carbon finance, and sustainability-linked trade finance solutions.",
+    markets: ['Commodity Trade Finance', 'Metals & Soft Commodities', 'Energy Transition Finance', 'Corporate Banking', 'Global Markets'],
+    offices: ['Amsterdam', 'London', 'Singapore', 'Geneva', 'Dubai', 'New York', 'Hong Kong'],
+  },
+];
+
+const ALL_FIRMS = [...FEATURED_FIRMS, ..._EXTRA_FIRMS, ...FEATURED_BANKS, ..._EXTRA_BANKS];
 
 const _FIRMS_MAP = Object.fromEntries(ALL_FIRMS.map(f => [f.key, f]));
 
@@ -1443,11 +1631,12 @@ function renderFirmsPage() {
 
     // Featured firms grouped by category, 8 per group
     const categories = [
-      { key: 'Trading House', label: 'Featured Commodity Trading Houses' },
-      { key: 'Hedge Fund',    label: 'Featured Hedge Funds' },
+      { key: 'Trading House', label: 'Featured Commodity Trading Houses', src: FEATURED_FIRMS },
+      { key: 'Hedge Fund',    label: 'Featured Hedge Funds',              src: FEATURED_FIRMS },
+      { key: 'Bank',          label: 'Featured Banks',                    src: FEATURED_BANKS },
     ];
     categories.forEach(cat => {
-      const firms = FEATURED_FIRMS.filter(f => f.category === cat.key).slice(0, 8);
+      const firms = cat.src.filter(f => f.category === cat.key).slice(0, 8);
       if (!firms.length) return;
       html += `<div class="page-section-heading">${cat.label}</div>`;
       html += '<div class="firm-grid">';
@@ -1544,7 +1733,9 @@ function openFirmModal(key) {
   document.body.style.overflow = 'hidden';
 
   // Fetch live recent activity for this firm
-  const keyword = f.category === 'Trading House' ? 'commodity trading' : 'hedge fund';
+  const keyword = f.category === 'Trading House' ? 'commodity trading'
+                : f.category === 'Bank'          ? 'investment bank'
+                :                                  'hedge fund';
   const q = encodeURIComponent(f.name + ' ' + keyword);
   fetch('/api/news/search?q=' + q)
     .then(r => r.json())

@@ -17,6 +17,55 @@ _cg_lock        = threading.Lock()
 _cg_cache: dict = {}          # key → {"data": ..., "ts": float}
 
 
+# ── Binance real-time crypto cache ───────────────────────────────────────────────
+# Binance public REST API (no key required) returns real-time spot prices.
+# Used as the primary source for BTC and ETH spot prices.
+
+_BINANCE_TTL    = 12          # seconds — near-real-time, well below the 30 s refresh
+_binance_lock   = threading.Lock()
+_binance_cache: dict = {}     # symbol → {"price": float, "ts": float}
+
+
+def _binance_get(symbols: list) -> dict:
+    """Fetch real-time spot prices from Binance for a list of USDT symbols.
+
+    Single combined request, TTL-cached.  Returns {symbol: price_float}.
+    On error: serves stale cached prices where available; raises only on cold failure.
+    """
+    import json as _json
+    now = time.monotonic()
+    with _binance_lock:
+        if all(
+            sym in _binance_cache and (now - _binance_cache[sym]["ts"]) < _BINANCE_TTL
+            for sym in symbols
+        ):
+            return {sym: _binance_cache[sym]["price"] for sym in symbols}
+
+    try:
+        r = requests.get(
+            "https://api.binance.com/api/v3/ticker/price",
+            params={"symbols": _json.dumps(symbols)},
+            timeout=8,
+        )
+        r.raise_for_status()
+        now2 = time.monotonic()
+        result: dict = {}
+        with _binance_lock:
+            for item in r.json():
+                sym   = item["symbol"]
+                price = float(item["price"])
+                _binance_cache[sym] = {"price": price, "ts": now2}
+                if sym in symbols:
+                    result[sym] = price
+        return result
+    except Exception:
+        with _binance_lock:
+            stale = {sym: _binance_cache[sym]["price"] for sym in symbols if sym in _binance_cache}
+        if stale:
+            return stale
+        raise
+
+
 def _cg_get(url: str, params: dict | None = None, timeout: int = 12):
     """GET a CoinGecko endpoint with an in-process TTL cache.
 
@@ -160,9 +209,32 @@ def _fetch_crypto_prices() -> dict:
     )
 
 
+def _fetch_crypto_spot(binance_sym: str, cg_key: str) -> float | None:
+    """Fetch a real-time crypto spot price using: Binance → CoinGecko → None.
+
+    Never raises — returns None when all sources fail.
+    """
+    # 1. Binance (real-time, no key)
+    try:
+        prices = _binance_get([binance_sym])
+        if binance_sym in prices:
+            return prices[binance_sym]
+    except Exception:
+        pass
+
+    # 2. CoinGecko (TTL-cached, rate-limited fallback)
+    try:
+        data = _fetch_crypto_prices()
+        return float(data[cg_key]["usd"])
+    except Exception:
+        pass
+
+    return None
+
+
 def fetch_bitcoin():
-    data  = _fetch_crypto_prices()
-    price = float(data["bitcoin"]["usd"])
+    price = _fetch_crypto_spot("BTCUSDT", "bitcoin")
+
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
     hist = _yf_fetch("BTC-USD", "1y", "1d")
@@ -171,12 +243,17 @@ def fetch_bitcoin():
         if len(closes) >= 2:
             prev_price = float(closes.iloc[-2])
             changes = _compute_changes(closes)
+        if price is None and len(closes) >= 1:
+            price = float(closes.iloc[-1])   # yfinance as last-resort price source
+
+    if price is None:
+        raise ValueError("No BTC price from Binance, CoinGecko, or yfinance")
     return price, prev_price, changes
 
 
 def fetch_ethereum():
-    data  = _fetch_crypto_prices()
-    price = float(data["ethereum"]["usd"])
+    price = _fetch_crypto_spot("ETHUSDT", "ethereum")
+
     prev_price = None
     changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
     hist = _yf_fetch("ETH-USD", "1y", "1d")
@@ -185,6 +262,11 @@ def fetch_ethereum():
         if len(closes) >= 2:
             prev_price = float(closes.iloc[-2])
             changes = _compute_changes(closes)
+        if price is None and len(closes) >= 1:
+            price = float(closes.iloc[-1])   # yfinance as last-resort price source
+
+    if price is None:
+        raise ValueError("No ETH price from Binance, CoinGecko, or yfinance")
     return price, prev_price, changes
 
 
