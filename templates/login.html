@@ -217,14 +217,14 @@
     <div class="error-box">{{ error }}</div>
     {% endif %}
 
-    <form method="POST" action="/login" autocomplete="on">
+    <form method="POST" action="/login" autocomplete="off">
       <div class="field">
         <label for="username">Username</label>
         <input
           type="text"
           id="username"
           name="username"
-          autocomplete="username"
+          autocomplete="off"
           autofocus
           value="{{ prefill_username }}"
           required
@@ -237,7 +237,7 @@
             type="password"
             id="password"
             name="password"
-            autocomplete="current-password"
+            autocomplete="off"
             required
           >
           <button

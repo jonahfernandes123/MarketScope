@@ -1560,6 +1560,7 @@ const _FIRMS_MAP = Object.fromEntries(ALL_FIRMS.map(f => [f.key, f]));
 let _firmsSearchQuery = '';
 let _firmsCategoryFilter = null; // null = default featured view; string = focused category
 const _contactsIndex = {}; // firmKey → contacts array
+let _contactViewCache = []; // rebuilt each renderFirmsPage search render; [{contact,firm},…]
 
 function setFirmsSearch(val) {
   _firmsSearchQuery = val;
@@ -1626,6 +1627,12 @@ const _STAR_EMPTY  = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"
 const _STAR_FILLED_LG = `<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.368 2.448a1 1 0 00-.364 1.118l1.287 3.957c.3.921-.755 1.688-1.54 1.118l-3.368-2.448a1 1 0 00-1.175 0l-3.368 2.448c-.784.57-1.838-.197-1.539-1.118l1.287-3.957a1 1 0 00-.364-1.118L2.065 9.384c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69L9.049 2.927z"/></svg>`;
 const _STAR_EMPTY_LG  = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" width="18" height="18"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.368 2.448a1 1 0 00-.364 1.118l1.287 3.957c.3.921-.755 1.688-1.54 1.118l-3.368-2.448a1 1 0 00-1.175 0l-3.368 2.448c-.784.57-1.838-.197-1.539-1.118l1.287-3.957a1 1 0 00-.364-1.118L2.065 9.384c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69L9.049 2.927z" stroke-linejoin="round"/></svg>`;
 
+// ── Shared SVG icon constants (reused across workspace cards and contact view) ─
+const _SVG_LINKEDIN = `<svg class="li-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20.45 20.45h-3.554v-5.57c0-1.328-.024-3.037-1.85-3.037-1.851 0-2.134 1.446-2.134 2.94v5.667H9.358V9h3.414v1.561h.047c.475-.9 1.636-1.85 3.368-1.85 3.6 0 4.267 2.369 4.267 5.455v6.284zM5.337 7.433a2.062 2.062 0 1 1 0-4.124 2.062 2.062 0 0 1 0 4.124zM6.968 20.45H3.706V9h3.262v11.45zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>`;
+const _SVG_EMAIL    = `<svg class="email-icon" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>`;
+const _SVG_PENCIL   = `<svg class="fw-pencil-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="currentColor"><path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zm-2.207 2.207L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>`;
+const _SVG_TRASH    = `<svg class="fw-trash-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>`;
+
 function _refreshModalFavBtn(key) {
   const btn = document.getElementById('firm-modal-fav-btn');
   if (!btn) return;
@@ -1636,10 +1643,11 @@ function _refreshModalFavBtn(key) {
 }
 
 function _contactResultHtml(contact, firm) {
+  const cacheIdx = _contactViewCache.push({ contact, firm }) - 1;
   const logo = `<span class="firm-logo contact-result-logo" style="background:${firm.color}">${esc(firm.initials)}</span>`;
   const titlePart = contact.title ? `<span class="contact-result-sep">&middot;</span><span class="contact-result-title">${esc(contact.title)}</span>` : '';
   const locPart   = contact.location ? `<span class="contact-result-sep">&middot;</span><span class="contact-result-loc">${esc(contact.location)}</span>` : '';
-  return `<div class="contact-result-card" onclick="openFirmModal('${firm.key}')">
+  return `<div class="contact-result-card" onclick="openContactView(${cacheIdx})">
     <div class="contact-result-name">${esc(contact.name)}</div>
     <div class="contact-result-meta">${logo}<span class="contact-result-firm">${esc(firm.name)}</span>${titlePart}${locPart}</div>
   </div>`;
@@ -1715,6 +1723,7 @@ function renderFirmsPage() {
   }
 
   // ── Search mode ─────────────────────────────────────────────────────────────
+  _contactViewCache = []; // reset before building contact results for this render
   const filteredFirms = ALL_FIRMS.filter(f =>
     inCat(f) && (
       f.name.toLowerCase().includes(q)
@@ -1911,6 +1920,64 @@ document.getElementById('firm-overlay').addEventListener('click', e => {
   if (e.target.id === 'firm-overlay') closeFirmModal();
 });
 
+// ── Contact view modal ────────────────────────────────────────────────────────
+
+function openContactView(cacheIdx) {
+  const item = _contactViewCache[cacheIdx];
+  if (!item) return;
+  const { contact: c, firm: f } = item;
+
+  const noteHistory = Array.isArray(c.note_history) ? c.note_history : [];
+  const legacyNote  = (c.notes || c.description || '').trim();
+  let noteHtml = '';
+  if (noteHistory.length || legacyNote) {
+    noteHtml += '<div class="contact-note-history">';
+    [...noteHistory].reverse().forEach(({ text, ts }) => {
+      const tsStr = ts ? _fmtNoteDate(ts) : '';
+      noteHtml += `<div class="contact-note-entry">
+        ${tsStr ? `<div class="contact-note-entry-header"><span class="contact-note-ts">${esc(tsStr)}</span></div>` : ''}
+        <span class="contact-note-text">${esc(text || '')}</span>
+      </div>`;
+    });
+    if (legacyNote && !noteHistory.length) {
+      noteHtml += `<div class="contact-note-entry contact-note-legacy">
+        <span class="contact-note-ts">note</span>
+        <span class="contact-note-text">${esc(legacyNote)}</span>
+      </div>`;
+    }
+    noteHtml += '</div>';
+  }
+
+  const expLabel = c.years_experience ? `<span class="workspace-contact-exp">${esc(String(c.years_experience))} yrs exp</span>` : '';
+  const liLink   = c.linkedin_url ? `<a class="workspace-contact-linkedin" href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" title="LinkedIn profile">${_SVG_LINKEDIN}</a>` : '';
+  const emailLink = c.email ? `<a class="workspace-contact-email" href="mailto:${esc(c.email)}" title="${esc(c.email)}">${_SVG_EMAIL}</a>` : '';
+
+  document.getElementById('contact-view-body').innerHTML = `
+    <div class="contact-view-firm-row" onclick="closeContactView();openFirmModal('${f.key}')" title="Open firm workspace">
+      <span class="firm-logo contact-view-firm-logo" style="background:${f.color}">${esc(f.initials)}</span>
+      <span class="contact-view-firm-name">${esc(f.name)}</span>
+      <span class="contact-view-firm-arrow">&rsaquo;</span>
+    </div>
+    <div class="contact-view-name">${esc(c.name)}${liLink}${emailLink}</div>
+    ${c.title || expLabel ? `<div class="workspace-contact-title">${c.title ? esc(c.title) : ''}${expLabel ? `&ensp;${expLabel}` : ''}</div>` : ''}
+    ${c.location ? `<div class="workspace-contact-location">${esc(c.location)}</div>` : ''}
+    ${c.phone    ? `<div class="workspace-contact-phone">${esc(c.phone)}</div>` : ''}
+    ${c.email    ? `<div class="workspace-contact-email-text">${esc(c.email)}</div>` : ''}
+    ${noteHtml ? `<div class="modal-divider" style="margin-top:18px"></div><div class="section-label" style="margin-bottom:10px">Notes</div>${noteHtml}` : ''}
+  `;
+  document.getElementById('contact-view-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeContactView() {
+  document.getElementById('contact-view-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+document.getElementById('contact-view-close-btn').addEventListener('click', closeContactView);
+document.getElementById('contact-view-overlay').addEventListener('click', e => {
+  if (e.target.id === 'contact-view-overlay') closeContactView();
+});
+
 /* ── Date helpers ────────────────────────────────────────────────────────────── */
 function _relativeDate(dateStr) {
   if (!dateStr) return '';
@@ -2049,6 +2116,7 @@ function _renderFirmWorkspace() {
               <div class="contact-note-entry-header">
                 ${ts ? `<span class="contact-note-ts">${esc(ts)}</span>` : ''}
                 <button class="contact-note-edit-btn" onclick="startEditNote(${idx},${ni})" title="Edit note">${_pencilSvg}</button>
+                <button class="contact-note-delete-btn" onclick="deleteContactNote(${idx},${ni})" title="Delete note">${_trashSvg}</button>
               </div>
               <span class="contact-note-text">${esc(entry.text || '')}</span>
             </div>`;
@@ -2392,6 +2460,21 @@ function saveEditedNote(ci, ni) {
   if (!Array.isArray(contact.note_history) || !contact.note_history[ni]) return;
   contact.note_history[ni] = { ...contact.note_history[ni], text };
   _fwEditingNote = null;
+  _contactsIndex[_fwKey] = _fwData.contacts;
+  apiFetch('/api/workspace/' + _fwKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(_fwData),
+  }).then(() => _renderFirmWorkspace());
+}
+
+function deleteContactNote(ci, ni) {
+  if (!confirm('Delete this note entry? This cannot be undone.')) return;
+  _syncFwNotes();
+  const contact = _fwData.contacts[ci];
+  if (!Array.isArray(contact.note_history)) return;
+  contact.note_history.splice(ni, 1);
+  if (_fwEditingNote && _fwEditingNote.ci === ci && _fwEditingNote.ni === ni) _fwEditingNote = null;
   _contactsIndex[_fwKey] = _fwData.contacts;
   apiFetch('/api/workspace/' + _fwKey, {
     method: 'POST',

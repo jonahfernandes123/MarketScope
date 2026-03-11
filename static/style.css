@@ -1264,6 +1264,45 @@ body {
 .workspace-btn-addnote:hover { opacity: 1; }
 .workspace-form-opt { font-size: 0.68rem; font-weight: 400; color: var(--dim); }
 
+/* ── Note entry delete button ────────────────────────────────── */
+.contact-note-delete-btn {
+  flex-shrink: 0; background: none; border: none; cursor: pointer;
+  color: var(--dim); padding: 1px 2px; border-radius: 4px;
+  display: flex; align-items: center; opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.contact-note-delete-btn svg { width: 11px; height: 11px; }
+.contact-note-entry:hover .contact-note-delete-btn { opacity: 1; }
+.contact-note-delete-btn:hover { color: #f87171; }
+
+/* ── Contact view modal ──────────────────────────────────────── */
+.contact-view-modal {
+  max-width: 480px; width: 100%;
+  padding: 32px 28px 28px;
+}
+.contact-view-firm-row {
+  display: flex; align-items: center; gap: 9px;
+  margin-bottom: 18px; cursor: pointer;
+  color: var(--muted); transition: color 0.15s;
+  width: fit-content;
+}
+.contact-view-firm-row:hover { color: var(--text); }
+.contact-view-firm-logo {
+  width: 24px !important; height: 24px !important;
+  border-radius: 6px !important; font-size: 0.52rem !important;
+  flex-shrink: 0;
+}
+.contact-view-firm-name { font-size: 0.78rem; font-weight: 600; }
+.contact-view-firm-arrow { font-size: 1rem; line-height: 1; }
+.contact-view-name {
+  font-size: 1.15rem; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.contact-view-email-text {
+  font-size: 0.78rem; color: var(--muted); margin-top: 2px;
+}
+
 .firm-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
