@@ -3,6 +3,7 @@
   --bg:         #080d18;
   --surface:    #0e1624;
   --raised:     #131e30;
+  --surface-2:  #111827;
   --hover:      #1a2840;
   --border:     rgba(255,255,255,0.07);
   --border-hi:  rgba(255,255,255,0.14);
@@ -19,6 +20,7 @@ body.light-mode {
   --bg:         #e8edf4;
   --surface:    #ffffff;
   --raised:     #f2f6fb;
+  --surface-2:  #edf1f7;
   --hover:      #dce6f2;
   --border:     rgba(0,0,0,0.12);
   --border-hi:  rgba(0,0,0,0.22);
@@ -176,26 +178,6 @@ body {
 }
 .user-logout-btn:hover { color: var(--text); border-color: var(--muted); }
 
-/* Private Workspace placeholder in firm modal */
-.workspace-placeholder-block {
-  background: var(--surface-2, #1a1d27);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.workspace-placeholder-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 11px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.workspace-placeholder-row:last-child { border-bottom: none; }
-.workspace-placeholder-label {
-  font-size: 0.8rem; font-weight: 500; color: var(--muted);
-}
-.workspace-placeholder-soon {
-  font-size: 0.72rem; color: var(--dim);
-  font-style: italic;
-}
 
 /* ── Private Workspace (active) ─────────────────────────────────────────────── */
 .workspace-block { margin-bottom: 22px; }
@@ -262,7 +244,7 @@ body {
 .workspace-contacts-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 
 .workspace-contact-card {
-  background: var(--surface-2, #1a1d27);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px; padding: 12px 14px;
   position: relative;   /* anchor for the edit button */
@@ -387,7 +369,7 @@ body {
 .workspace-form-req { color: #f87171; font-style: normal; }
 
 .workspace-contact-form {
-  background: var(--surface-2, #1a1d27);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px; padding: 14px;
   display: flex; flex-direction: column; gap: 10px;
@@ -807,10 +789,6 @@ body {
 .outlook-box { background: var(--bg); border-left: 3px solid var(--modal-accent, #3b82f6); border-radius: 0 8px 8px 0; padding: 14px 18px; font-size: 0.84rem; color: var(--text); line-height: 1.7; }
 .outlook-label { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--modal-accent, #3b82f6); margin-bottom: 7px; }
 
-/* ── Full-page news / macro lists ────────────────────────────── */
-.page-news-list li::before { color: var(--modal-accent, #3b82f6); }
-.page-news-list a { color: var(--text); text-decoration: none; transition: color 0.12s; }
-.page-news-list a:hover { color: var(--modal-accent, #3b82f6); }
 
 /* ── Footer ──────────────────────────────────────────────────── */
 .footer {

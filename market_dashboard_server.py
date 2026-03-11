@@ -55,6 +55,16 @@ app.config["SESSION_COOKIE_SECURE"]    = config.PRODUCTION
 # No persistent session — cookie expires when the browser closes
 
 
+# ── Security headers ──────────────────────────────────────────────────────────
+
+@app.after_request
+def _set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"]        = "DENY"
+    response.headers["Referrer-Policy"]        = "strict-origin-when-cross-origin"
+    return response
+
+
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 def login_required(f):

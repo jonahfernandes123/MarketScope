@@ -152,9 +152,6 @@ function toggleSection(headerEl) {
   if (id) _sectionOpenState[id] = isNowOpen;
 }
 
-function _isSectionOpen(id, defaultOpen) {
-  return _sectionOpenState.hasOwnProperty(id) ? _sectionOpenState[id] : defaultOpen;
-}
 
 /* ── Price card state & range mode ────────────────────────────────────────── */
 let instruments = [];
@@ -347,9 +344,10 @@ function _rebuildMovers() {
 }
 
 function _fetchPowerMarketsNews() {
-  fetch('/api/news/search?q=' + encodeURIComponent(POWER_MARKETS_QUERY))
-    .then(r => r.json())
+  apiFetch('/api/news/search?q=' + encodeURIComponent(POWER_MARKETS_QUERY))
+    .then(r => r && r.json())
     .then(articles => {
+      if (!articles) return;
       if (!Array.isArray(articles)) { _powerMarketsNews = []; renderNewsPage(); return; }
       // Sort by recency descending
       const sorted = [...articles].sort((a, b) => {
@@ -371,7 +369,7 @@ function _fetchPowerMarketsNews() {
 async function loadBriefingData() {
   // Seed _moversData from prices if instruments not yet loaded
   if (!instruments.length) {
-    const priceRes = await fetch('/api/prices').then(r => r.json()).catch(() => []);
+    const priceRes = await apiFetch('/api/prices').then(r => r ? r.json() : []).catch(() => []);
     _moversData = [...priceRes].sort((a, b) => {
       const pa = Math.abs(a.change_1d ?? -1);
       const pb = Math.abs(b.change_1d ?? -1);
@@ -383,8 +381,8 @@ async function loadBriefingData() {
   }
 
   const [news, drivers] = await Promise.all([
-    fetch('/api/home/news').then(r => r.json()).catch(() => []),
-    fetch('/api/home/drivers').then(r => r.json()).catch(() => []),
+    apiFetch('/api/home/news').then(r => r ? r.json() : []).catch(() => []),
+    apiFetch('/api/home/drivers').then(r => r ? r.json() : []).catch(() => []),
   ]);
   _newsData    = news;
   _driversData = drivers;
@@ -881,12 +879,12 @@ async function openCommodityModal(key) {
   document.body.style.overflow = 'hidden';
 
   const [histRes, summRes] = await Promise.all([
-    fetch('/api/history/' + key + '?range=' + currentRange),
-    fetch('/api/summary/' + key),
+    apiFetch('/api/history/' + key + '?range=' + currentRange),
+    apiFetch('/api/summary/' + key),
   ]);
-  if (histRes.ok) renderChart(await histRes.json());
+  if (histRes && histRes.ok) renderChart(await histRes.json());
   else showChartError();
-  if (summRes.ok) {
+  if (summRes && summRes.ok) {
     const data = await summRes.json();
     renderArticles(data.articles, inst.accent);
     renderSummary(data);
@@ -919,8 +917,8 @@ async function changeRange(range) {
 
   resetChart();
   try {
-    const res = await fetch('/api/history/' + currentKey + '?range=' + range);
-    if (res.ok) renderChart(await res.json());
+    const res = await apiFetch('/api/history/' + currentKey + '?range=' + range);
+    if (res && res.ok) renderChart(await res.json());
     else showChartError();
   } catch(e) { showChartError(); }
 }
