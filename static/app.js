@@ -1553,10 +1553,35 @@ const ALL_FIRMS = [...FEATURED_FIRMS, ..._EXTRA_FIRMS, ...FEATURED_BANKS, ..._EX
 const _FIRMS_MAP = Object.fromEntries(ALL_FIRMS.map(f => [f.key, f]));
 
 let _firmsSearchQuery = '';
+let _firmsCategoryFilter = new Set(['Trading House', 'Hedge Fund', 'Bank']);
+const _contactsIndex = {}; // firmKey → contacts array (populated as modals are opened)
 
 function setFirmsSearch(val) {
   _firmsSearchQuery = val;
   renderFirmsPage();
+}
+
+function toggleFirmCategoryFilter(cat) {
+  if (_firmsCategoryFilter.has(cat)) {
+    _firmsCategoryFilter.delete(cat);
+    if (_firmsCategoryFilter.size === 0) {
+      // Prevent empty state — reset to all
+      _firmsCategoryFilter.add('Trading House');
+      _firmsCategoryFilter.add('Hedge Fund');
+      _firmsCategoryFilter.add('Bank');
+    }
+  } else {
+    _firmsCategoryFilter.add(cat);
+  }
+  _updateFilterPills();
+  renderFirmsPage();
+}
+
+function _updateFilterPills() {
+  ['Trading House', 'Hedge Fund', 'Bank'].forEach(cat => {
+    const btn = document.getElementById('fpill-' + cat);
+    if (btn) btn.classList.toggle('active', _firmsCategoryFilter.has(cat));
+  });
 }
 
 /* ── Favorites ─────────────────────────────────────────────────────────────── */
@@ -1600,6 +1625,16 @@ function _refreshModalFavBtn(key) {
   btn.innerHTML  = fav ? _STAR_FILLED_LG : _STAR_EMPTY_LG;
 }
 
+function _contactResultHtml(contact, firm) {
+  const logo = `<span class="firm-logo contact-result-logo" style="background:${firm.color}">${esc(firm.initials)}</span>`;
+  const titlePart = contact.title ? `<span class="contact-result-sep">&middot;</span><span class="contact-result-title">${esc(contact.title)}</span>` : '';
+  const locPart   = contact.location ? `<span class="contact-result-sep">&middot;</span><span class="contact-result-loc">${esc(contact.location)}</span>` : '';
+  return `<div class="contact-result-card" onclick="openFirmModal('${firm.key}')">
+    <div class="contact-result-name">${esc(contact.name)}</div>
+    <div class="contact-result-meta">${logo}<span class="contact-result-firm">${esc(firm.name)}</span>${titlePart}${locPart}</div>
+  </div>`;
+}
+
 function _firmCardHtml(f) {
   const fav = isFavorite(f.key);
   return `<div class="firm-card" onclick="openFirmModal('${f.key}')">
@@ -1628,8 +1663,9 @@ function renderFirmsPage() {
   if (!q) {
     let html = '';
 
-    // User's personal favorites section (shown first if any exist)
-    const favFirms = _favoriteFirms.map(k => _FIRMS_MAP[k]).filter(Boolean);
+    // User's personal favorites section (shown first if any exist, respecting filter)
+    const favFirms = _favoriteFirms.map(k => _FIRMS_MAP[k]).filter(Boolean)
+      .filter(f => _firmsCategoryFilter.has(f.category));
     if (favFirms.length) {
       html += `<div class="page-section-heading">Your Favorites</div>`;
       html += '<div class="firm-grid">';
@@ -1644,6 +1680,7 @@ function renderFirmsPage() {
       { key: 'Bank',          label: 'Featured Banks',                    src: FEATURED_BANKS },
     ];
     categories.forEach(cat => {
+      if (!_firmsCategoryFilter.has(cat.key)) return;
       const firms = cat.src.filter(f => f.category === cat.key).slice(0, 8);
       if (!firms.length) return;
       html += `<div class="page-section-heading">${cat.label}</div>`;
@@ -1651,27 +1688,55 @@ function renderFirmsPage() {
       firms.forEach(f => { html += _firmCardHtml(f); });
       html += '</div>';
     });
+    if (!html) html = `<div class="firms-empty-state">No categories selected.</div>`;
     el.innerHTML = html;
     return;
   }
 
-  // Search across ALL_FIRMS
-  const filtered = ALL_FIRMS.filter(f =>
-    f.name.toLowerCase().includes(q)
-    || (f.fullName || '').toLowerCase().includes(q)
-    || (f.category || '').toLowerCase().includes(q)
-    || (f.region || '').toLowerCase().includes(q)
-    || (f.hq || '').toLowerCase().includes(q)
+  // Search across ALL_FIRMS (respecting category filter)
+  const filteredFirms = ALL_FIRMS.filter(f =>
+    _firmsCategoryFilter.has(f.category) && (
+      f.name.toLowerCase().includes(q)
+      || (f.fullName || '').toLowerCase().includes(q)
+      || (f.category || '').toLowerCase().includes(q)
+      || (f.region || '').toLowerCase().includes(q)
+      || (f.hq || '').toLowerCase().includes(q)
+    )
   );
 
-  if (!filtered.length) {
-    el.innerHTML = `<div class="firms-empty-state">No firms match &ldquo;${esc(q)}&rdquo;</div>`;
+  // Search contacts index (respecting category filter)
+  const filteredContacts = [];
+  Object.entries(_contactsIndex).forEach(([firmKey, contacts]) => {
+    const firm = _FIRMS_MAP[firmKey];
+    if (!firm || !_firmsCategoryFilter.has(firm.category)) return;
+    contacts.forEach(c => {
+      if (!c.name) return;
+      if (
+        c.name.toLowerCase().includes(q)
+        || (c.title || '').toLowerCase().includes(q)
+        || (c.location || '').toLowerCase().includes(q)
+      ) filteredContacts.push({ contact: c, firm });
+    });
+  });
+
+  if (!filteredFirms.length && !filteredContacts.length) {
+    el.innerHTML = `<div class="firms-empty-state">No firms or contacts match &ldquo;${esc(q)}&rdquo;</div>`;
     return;
   }
 
-  let html = '<div class="firm-grid">';
-  filtered.forEach(f => { html += _firmCardHtml(f); });
-  html += '</div>';
+  let html = '';
+  if (filteredFirms.length) {
+    html += `<div class="page-section-heading">Firms</div>`;
+    html += '<div class="firm-grid">';
+    filteredFirms.forEach(f => { html += _firmCardHtml(f); });
+    html += '</div>';
+  }
+  if (filteredContacts.length) {
+    html += `<div class="page-section-heading">Contacts</div>`;
+    html += '<div class="contact-results-list">';
+    filteredContacts.forEach(({ contact, firm }) => { html += _contactResultHtml(contact, firm); });
+    html += '</div>';
+  }
   el.innerHTML = html;
 }
 renderFirmsPage();
@@ -1797,6 +1862,7 @@ function openFirmModal(key) {
     .then(data => {
       if (!data) return;
       _fwData = { notes: data.notes || '', contacts: Array.isArray(data.contacts) ? data.contacts : [] };
+      _contactsIndex[key] = _fwData.contacts;
       _renderFirmWorkspace();
     })
     .catch(() => {

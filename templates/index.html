@@ -218,8 +218,13 @@
     <h1 class="page-title">Firms</h1>
     <div class="firms-search-wrap">
       <input class="firms-search-input" id="firms-search" type="text"
-             placeholder="Search by name&hellip;"
+             placeholder="Search firms &amp; contacts&hellip;"
              oninput="setFirmsSearch(this.value)">
+      <div class="firms-filter-pills" id="firms-filter-pills">
+        <button class="firms-filter-pill active" id="fpill-Trading House" onclick="toggleFirmCategoryFilter('Trading House')">Trading Houses</button>
+        <button class="firms-filter-pill active" id="fpill-Hedge Fund"    onclick="toggleFirmCategoryFilter('Hedge Fund')">Hedge Funds</button>
+        <button class="firms-filter-pill active" id="fpill-Bank"          onclick="toggleFirmCategoryFilter('Bank')">Banks</button>
+      </div>
     </div>
     <div id="firms-page-body">
       <div class="placeholder"><span class="spin"></span>Loading&hellip;</div>

@@ -1170,10 +1170,48 @@ body {
 }
 .firms-search-input:focus { border-color: var(--accent, #3b82f6); }
 .firms-search-input::placeholder { color: var(--dim); }
+.firms-filter-pills {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 10px;
+}
+.firms-filter-pill {
+  font-family: inherit; font-size: 0.7rem; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 4px 12px; border-radius: 20px; cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface); color: var(--muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.firms-filter-pill.active {
+  background: var(--raised); border-color: var(--border-hi);
+  color: var(--text);
+}
+.firms-filter-pill:hover { border-color: var(--border-hi); color: var(--text); }
 .firms-empty-state {
   padding: 40px 0; text-align: center;
   font-size: 0.875rem; color: var(--muted);
 }
+
+/* ── Contact search results ──────────────────────────────────── */
+.contact-results-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.contact-result-card {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 11px 14px;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.contact-result-card:hover { background: var(--raised); border-color: var(--border-hi); }
+.contact-result-name { font-size: 0.875rem; font-weight: 700; color: var(--text); }
+.contact-result-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.contact-result-logo {
+  width: 20px !important; height: 20px !important;
+  border-radius: 5px !important; font-size: 0.5rem !important;
+  flex-shrink: 0;
+}
+.contact-result-firm { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+.contact-result-sep { font-size: 0.75rem; color: var(--dim); }
+.contact-result-title { font-size: 0.75rem; color: var(--muted); }
+.contact-result-loc { font-size: 0.75rem; color: var(--dim); }
 
 .firm-grid {
   display: grid;
