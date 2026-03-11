@@ -18,7 +18,6 @@ Requirements:
 from __future__ import annotations
 
 import concurrent.futures
-import threading
 import uuid
 from functools import wraps
 
@@ -30,8 +29,8 @@ from flask import (
 
 from models.instruments import CONTEXT_QUERIES, INSTRUMENT_MAP, INSTRUMENTS, SUMMARIES
 from services.market_data import YFINANCE_AVAILABLE, _history_bitcoin, _history_ethereum, _history_eurusd, _history_yf
+from services.market_engine import engine
 from services.news_fetcher import _fetch_context_news, _fetch_news_for_query, _fetch_yf_news
-from services.price_cache import _background_loop, _cache_lock, _price_data, refresh_prices
 from services.user_data import (
     ensure_user_initialized, get_firm_entry, save_firm_entry,
     get_user_password, save_user_password,
@@ -114,22 +113,25 @@ def logout():
 @app.route("/api/prices")
 @login_required
 def api_prices():
-    with _cache_lock:
-        result = []
-        for inst in INSTRUMENTS:
-            d = _price_data.get(inst["key"], {})
-            result.append({
-                "key": inst["key"], "label": inst["label"],
-                "price": d.get("price"), "prev_price": d.get("prev_price"),
-                "change_1d":  d.get("change_1d"),
-                "change_1w":  d.get("change_1w"),
-                "change_1mo": d.get("change_1mo"),
-                "change_1y":  d.get("change_1y"),
-                "error": d.get("error"),
-                "prefix": inst["prefix"], "suffix": inst["suffix"],
-                "decimals": inst["decimals"], "thousands": inst["thousands"],
-                "icon": inst["icon"], "accent": inst["accent"],
-            })
+    snapshot = engine.get_snapshot()
+    result = []
+    for inst in INSTRUMENTS:
+        d = snapshot.get(inst["key"], {})
+        result.append({
+            "key": inst["key"], "label": inst["label"],
+            "price": d.get("price"), "prev_price": d.get("prev_price"),
+            "change_1d":  d.get("change_1d"),
+            "change_1w":  d.get("change_1w"),
+            "change_1mo": d.get("change_1mo"),
+            "change_1y":  d.get("change_1y"),
+            "error": d.get("error"),
+            "stale": d.get("stale", False),
+            "source": d.get("source"),
+            "ts": d.get("ts"),
+            "prefix": inst["prefix"], "suffix": inst["suffix"],
+            "decimals": inst["decimals"], "thousands": inst["thousands"],
+            "icon": inst["icon"], "accent": inst["accent"],
+        })
     return jsonify(result)
 
 
@@ -195,8 +197,7 @@ def api_summary(key: str):
 @login_required
 def api_home_movers():
     """Return all instruments ranked by absolute % change (largest first)."""
-    with _cache_lock:
-        snapshot = dict(_price_data)
+    snapshot = engine.get_snapshot()
 
     rows = []
     for inst in INSTRUMENTS:
@@ -353,8 +354,7 @@ def dashboard_redirect():
 if not YFINANCE_AVAILABLE:
     print("[WARN] yfinance not installed — commodity prices unavailable.")
 
-refresh_prices()
-threading.Thread(target=_background_loop, args=(REFRESH_SECONDS,), daemon=True).start()
+engine.start(REFRESH_SECONDS)
 
 
 # ── Entry point (direct invocation only) ──────────────────────────────────────
