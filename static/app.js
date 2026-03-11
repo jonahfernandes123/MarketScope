@@ -1984,7 +1984,10 @@ function _renderFirmWorkspace() {
     const allIdx   = _fwData.contacts.map((c, idx) => ({ c, idx }));
     const filtered = _searchQ
       ? allIdx.filter(({ c }) => {
-          const notes = c.notes || c.description || '';
+          const notes = [
+            c.notes || c.description || '',
+            ...(Array.isArray(c.note_history) ? c.note_history.map(n => n.text || '') : []),
+          ].join(' ');
           return (c.name     || '').toLowerCase().includes(_searchQ)
               || (c.title    || '').toLowerCase().includes(_searchQ)
               || (c.location || '').toLowerCase().includes(_searchQ)
@@ -2209,7 +2212,8 @@ function clearFirmNotes() {
 function showFirmContactForm() {
   _syncFwNotes();
   _fwAddingContact = true;
-  _fwEditingIdx    = null;  // mutually exclusive with edit
+  _fwEditingIdx    = null;
+  _fwAddingNoteIdx = null;
   _renderFirmWorkspace();
 }
 
@@ -2229,7 +2233,8 @@ function editFirmContact(idx) {
 
 function cancelEditContact() {
   _syncFwNotes();
-  _fwEditingIdx = null;
+  _fwEditingIdx    = null;
+  _fwAddingNoteIdx = null;
   _renderFirmWorkspace();
 }
 
