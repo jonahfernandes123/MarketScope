@@ -139,10 +139,10 @@ def _price_status(inst: dict, d: dict) -> str:
     provider = inst.get("provider", "yfinance")
     if provider == "binance":
         return "live"
-    # Frankfurter is the ECB daily fixing; yfinance FX/futures are ~15 min delayed.
-    # Both are labelled "delayed" because we primarily use yfinance intraday even for
-    # EUR/USD — the Frankfurter fallback would be "settlement" but we can't distinguish
-    # at this layer without changing the fetch return signature.
+    if provider == "frankfurter":
+        # Frankfurter.app serves the ECB official daily fixing rate.
+        return "settlement"
+    # yfinance FX and futures data is ~15-min delayed intraday.
     return "delayed"
 
 
@@ -263,7 +263,7 @@ def api_curve_debug(key: str):
         return jsonify({"error": f"curve_enabled=False for {key}"}), 400
 
     from services.futures_curve import _upcoming_contracts
-    from services.market_data import _yf_fetch, YFINANCE_AVAILABLE
+    from services.market_data import YFINANCE_AVAILABLE
 
     if not YFINANCE_AVAILABLE:
         return jsonify({"error": "yfinance not installed"}), 500
@@ -290,8 +290,21 @@ def api_curve_debug(key: str):
             return None
 
     def _tier1(sym: str) -> tuple[float | None, str | None]:
+        """Explicit date-range history — the correct call for back-month futures.
+
+        period= shorthands ("5d", "1mo") return empty DataFrames for
+        specific-expiry back-month contract symbols (e.g. CLJ26=F).
+        Explicit start/end dates bypass this Yahoo Finance restriction.
+        """
         try:
-            hist = _yf_fetch(sym, "5d", "1d")
+            from datetime import timedelta as _td
+            end_dt   = datetime.now(timezone.utc)
+            start_dt = end_dt - _td(days=30)
+            hist = yf.Ticker(sym).history(
+                start=start_dt.strftime("%Y-%m-%d"),
+                end=end_dt.strftime("%Y-%m-%d"),
+                interval="1d",
+            )
             if hist is not None and not hist.empty:
                 closes = hist["Close"].dropna()
                 if len(closes) >= 1:
@@ -301,17 +314,19 @@ def api_curve_debug(key: str):
             return None, str(exc)
 
     def _tier2(sym: str) -> tuple[float | None, str | None]:
+        """info.regularMarketPrice via /v10/finance/quoteSummary."""
         try:
-            hist = yf.Ticker(sym).history(period="1mo", interval="1d")
-            if hist is not None and not hist.empty:
-                closes = hist["Close"].dropna()
-                if len(closes) >= 1:
-                    return _safe_float(closes.iloc[-1]), None
-            return None, "empty or no data"
+            info  = yf.Ticker(sym).info
+            price = info.get("regularMarketPrice")
+            v = _safe_float(price)
+            if v is not None:
+                return v, None
+            return None, f"raw value={price!r} (None or non-positive)"
         except Exception as exc:
             return None, str(exc)
 
     def _tier3(sym: str) -> tuple[float | None, str | None]:
+        """fast_info.last_price via /v7/finance/quote — often NaN for back months."""
         try:
             price = yf.Ticker(sym).fast_info.last_price
             v = _safe_float(price)
@@ -331,13 +346,13 @@ def api_curve_debug(key: str):
             t2_price if t2_price is not None else t3_price
         )
         rows.append({
-            "symbol":    sym,
-            "label":     label,
-            "tier1_5d":  {"price": t1_price, "error": t1_err},
-            "tier2_1mo": {"price": t2_price, "error": t2_err},
-            "tier3_fi":  {"price": t3_price, "error": t3_err},
-            "final":     final,
-            "error":     None if final is not None else "all tiers failed",
+            "symbol":          sym,
+            "label":           label,
+            "tier1_explicit":  {"price": t1_price, "error": t1_err},
+            "tier2_info":      {"price": t2_price, "error": t2_err},
+            "tier3_fast_info": {"price": t3_price, "error": t3_err},
+            "final":           final,
+            "error":           None if final is not None else "all tiers failed",
         })
 
     priced_count = sum(1 for r in rows if r["final"] is not None)

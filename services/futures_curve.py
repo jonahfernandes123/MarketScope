@@ -10,8 +10,8 @@ Contract symbol format (yfinance):  {ROOT}{MONTH_CODE}{YY}=F
 Data source label: DELAYED
   All curve data comes from Yahoo Finance via yfinance (~15-min delayed).
   Individual contract month coverage is best for COMEX/NYMEX front months;
-  back-month and ICE contracts (e.g. TTF) are unreliable or unlisted in
-  Yahoo Finance and are excluded from curve_enabled instruments.
+  back-month and ICE contracts (e.g. TTF, Brent BZ) are unreliable or
+  unlisted in Yahoo Finance and are excluded from curve_enabled instruments.
   To swap the chain-price source, replace _fetch_chain_prices() only.
 
 Data quality note:
@@ -20,22 +20,34 @@ Data quality note:
   excluded from the curve chart but listed as "unavailable" in the
   contracts array.
 
-yfinance fast_info.last_price note:
-  fast_info.last_price uses Yahoo's /v7/finance/quote endpoint and reliably
-  returns NaN / None for non-front-month (back-month) futures contracts.
-  It is kept as Tier 1 only as a fast path for the front contract; the
-  primary workhorse for back months is Tier 2 (history period="5d") and
-  Tier 3 (history period="1mo").  All three tiers are attempted in order
-  before giving up on a symbol.
+Fetch strategy for back-month futures (why period= fails):
+  Yahoo Finance's /v8/finance/chart endpoint does NOT return OHLCV rows
+  for specific-expiry back-month futures (e.g. CLJ26=F) when called with
+  the period= shorthand ("5d", "1mo", etc.).  The endpoint requires explicit
+  start=/end= date parameters to return historical bars for these symbols.
+  This is the root cause of the "No contract prices available" error with
+  the previous history(period="5d") approach.
+
+  The fix is:
+    Tier 1 — history(start=..., end=...) with an explicit 30-day window.
+              Reliably returns the last traded bar for COMEX/NYMEX back months.
+    Tier 2 — info["regularMarketPrice"].
+              Yahoo /v10/finance/quoteSummary populates regularMarketPrice
+              for actively-traded back-month futures even when the chart
+              endpoint fails.
+    Tier 3 — fast_info.last_price.
+              Yahoo /v7/finance/quote; frequently NaN for back-month futures.
+              Kept as last resort.
 """
 
 from __future__ import annotations
 
 import concurrent.futures
 import logging
+import math
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 try:
     import yfinance as yf
@@ -44,6 +56,12 @@ except ImportError:
     _YF_AVAILABLE = False
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Provider constant — swap this label (and _fetch_chain_prices body) to
+# switch the entire curve chain to a different data source.
+# ---------------------------------------------------------------------------
+CURVE_PROVIDER = "yfinance"  # Replace with "refinitiv", "bloomberg", etc. when upgrading
 
 # Month code → calendar month number
 _MONTH_CODES: dict[str, int] = {
@@ -112,66 +130,92 @@ def _upcoming_contracts(
     return results[:n]
 
 
+def _safe_positive_float(val) -> float | None:
+    """Return val as float if it is a finite positive number, else None."""
+    try:
+        f = float(val)
+        if math.isfinite(f) and f > 0:
+            return f
+    except Exception:
+        pass
+    return None
+
+
 def _fetch_yf_price(symbol: str) -> float | None:
     """Return the latest price for a specific futures contract symbol.
 
     Three-tier fetch strategy (most reliable first for back-month contracts):
 
-      Tier 1: history(period="5d", interval="1d") via shared TTL cache.
-        Most reliable for all contract months including back months.
-        Yahoo Finance serves OHLCV history for specific-expiry futures
-        symbols (e.g. CLJ26=F) even when the quote API returns nothing.
+      Tier 1: history(start=..., end=...) with explicit date range.
+        Yahoo Finance's chart endpoint requires explicit start/end dates to
+        return OHLCV rows for specific-expiry back-month futures (e.g.
+        CLJ26=F, GCM26=F).  The period= shorthand ("5d", "1mo") does NOT
+        work for these symbols and returns empty DataFrames — this was the
+        root cause of "No contract prices available".  An explicit 30-day
+        window anchored to today's date reliably retrieves the last traded
+        bar for COMEX/NYMEX back months.
 
-      Tier 2: history(period="1mo", interval="1d") — direct, no cache.
-        Broader window catches contracts with no trades in the last 5
-        calendar days (e.g. long weekends, thin back months, ICE Brent).
+      Tier 2: info["regularMarketPrice"].
+        Yahoo /v10/finance/quoteSummary populates regularMarketPrice for
+        actively-traded back-month futures even when the chart endpoint
+        returns empty.  Slightly slower due to the extra round-trip.
 
-      Tier 3: fast_info.last_price — Yahoo quote API.
-        Fast path but unreliable for back-month futures: Yahoo's
-        /v7/finance/quote does not populate regularMarketPrice for
-        non-front-month contracts, causing last_price to return NaN.
-        Kept as last-resort fallback in case history() is unavailable.
+      Tier 3: fast_info.last_price — Yahoo /v7/finance/quote.
+        Frequently NaN for non-front-month futures (Yahoo does not populate
+        regularMarketPrice in the quote API for back months).  Kept only as
+        a last-resort fallback.
 
     Returns None if all three tiers fail.  Never raises.
     """
     if not _YF_AVAILABLE:
         return None
 
-    # Tier 1: OHLCV 5-day (shared TTL cache — avoids redundant upstream calls)
+    ticker_obj = yf.Ticker(symbol)
+
+    # Tier 1: explicit date-range history — the correct call for back-month futures.
+    # period= shorthands fail because Yahoo's chart API maps them to relative
+    # timestamps that are rejected for specific-expiry contract symbols.
+    # Explicit start/end bypasses this restriction.
     try:
-        from services.market_data import _yf_fetch  # avoid circular import
-        hist = _yf_fetch(symbol, "5d", "1d")
+        end_dt   = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(days=30)
+        hist = ticker_obj.history(
+            start=start_dt.strftime("%Y-%m-%d"),
+            end=end_dt.strftime("%Y-%m-%d"),
+            interval="1d",
+        )
         if hist is not None and not hist.empty:
             closes = hist["Close"].dropna()
-            if len(closes) >= 1:
-                log.debug("curve tier1 (5d history) OK for %s: %.4f", symbol, float(closes.iloc[-1]))
-                return round(float(closes.iloc[-1]), 6)
+            price = _safe_positive_float(closes.iloc[-1]) if len(closes) >= 1 else None
+            if price is not None:
+                log.debug("curve tier1 (explicit-range history) OK for %s: %.4f", symbol, price)
+                return round(price, 6)
+        log.debug("curve tier1 (explicit-range history) empty for %s", symbol)
     except Exception as exc:
-        log.debug("curve tier1 (5d history) failed for %s: %s", symbol, exc)
+        log.debug("curve tier1 (explicit-range history) failed for %s: %s", symbol, exc)
 
-    # Tier 2: OHLCV 1-month (direct, no cache — broader window for thin months)
+    # Tier 2: quoteSummary regularMarketPrice — works for actively-traded back months.
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1mo", interval="1d")
-        if hist is not None and not hist.empty:
-            closes = hist["Close"].dropna()
-            if len(closes) >= 1:
-                log.debug("curve tier2 (1mo history) OK for %s: %.4f", symbol, float(closes.iloc[-1]))
-                return round(float(closes.iloc[-1]), 6)
+        info  = ticker_obj.info
+        price = _safe_positive_float(info.get("regularMarketPrice"))
+        if price is not None:
+            log.debug("curve tier2 (info.regularMarketPrice) OK for %s: %.4f", symbol, price)
+            return round(price, 6)
+        log.debug("curve tier2 (info.regularMarketPrice) missing/zero for %s", symbol)
     except Exception as exc:
-        log.debug("curve tier2 (1mo history) failed for %s: %s", symbol, exc)
+        log.debug("curve tier2 (info.regularMarketPrice) failed for %s: %s", symbol, exc)
 
-    # Tier 3: quote API (fast_info) — last resort; often NaN for back-month futures
+    # Tier 3: quote API fast_info — last resort; often NaN for back-month futures.
     try:
-        ticker = yf.Ticker(symbol)
-        price = ticker.fast_info.last_price
-        if price is not None and price == price and price > 0:  # NaN-safe check
-            log.debug("curve tier3 (fast_info) OK for %s: %.4f", symbol, float(price))
-            return round(float(price), 6)
+        price = _safe_positive_float(ticker_obj.fast_info.last_price)
+        if price is not None:
+            log.debug("curve tier3 (fast_info.last_price) OK for %s: %.4f", symbol, price)
+            return round(price, 6)
+        log.debug("curve tier3 (fast_info.last_price) NaN/zero for %s", symbol)
     except Exception as exc:
-        log.debug("curve tier3 (fast_info) failed for %s: %s", symbol, exc)
+        log.debug("curve tier3 (fast_info.last_price) failed for %s: %s", symbol, exc)
 
-    log.warning("curve: all tiers failed for %s", symbol)
+    log.warning("curve: all tiers failed for %s — symbol may be unlisted in Yahoo Finance", symbol)
     return None
 
 
@@ -180,11 +224,12 @@ def _fetch_chain_prices(
 ) -> dict[str, float | None]:
     """Fetch prices for a list of (symbol, label) contract pairs.
 
-    This is the single swappable source function for the curve chain.
-    To replace the data source (e.g. switch to a paid API), replace
-    this function's body only — the rest of get_curve() is unchanged.
+    REPLACEABLE: to swap the data source, replace this function body only.
+    The rest of get_curve() is source-agnostic.
 
-    Returns a dict mapping symbol → price (or None if unavailable).
+    Returns: dict mapping symbol -> price (None if unavailable).
+    Source label: "delayed" (yfinance ~15-min delayed).
+
     Uses a bounded thread pool to parallelise yfinance calls without
     triggering rate-limit bans (max 4 concurrent requests).
     """
@@ -301,7 +346,10 @@ def get_curve(inst: dict) -> dict:
         # Honest label: Yahoo Finance data is ~15-min delayed, not live or settlement.
         "source":           _CURVE_SOURCE,
         "ts":               ts,
-        "error":            None if valid else "No contract prices available from yfinance",
+        "error":            None if valid else (
+            f"No contract prices returned from {CURVE_PROVIDER} for any of the "
+            f"{len(contracts)} generated symbols — check symbol format or provider availability"
+        ),
     }
 
     with _curve_lock:

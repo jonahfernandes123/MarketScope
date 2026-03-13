@@ -176,8 +176,11 @@ function updateCardChange(inst) {
     cEl.innerHTML = '<span class="neu">\u2014</span>';
   } else if (chg > 0) {
     cEl.innerHTML = '<span class="up">\u25b2</span><span class="up">+' + chg.toFixed(2) + '%</span>';
-  } else {
+  } else if (chg < 0) {
     cEl.innerHTML = '<span class="down">\u25bc</span><span class="down">' + chg.toFixed(2) + '%</span>';
+  } else {
+    // Exactly zero — show neutral, not down
+    cEl.innerHTML = '<span class="neu">\u2192 0.00%</span>';
   }
 }
 
@@ -882,7 +885,10 @@ async function openCommodityModal(key) {
     } else if (inst.price_type === 'spot') {
       clEl.textContent = 'Spot \u00b7 ' + (inst.price_status === 'live' ? 'Live' : '\u223015min delayed');
     } else if (inst.price_type === 'fx_spot') {
-      clEl.textContent = 'FX Spot \u00b7 Interbank (\u223015min delayed)';
+      const fxSrc = inst.price_status === 'settlement' ? 'Official daily rate (ECB)'
+                  : inst.price_status === 'unavailable' ? 'Data unavailable'
+                  : 'Interbank (\u223015min delayed)';
+      clEl.textContent = 'FX Spot \u00b7 ' + fxSrc;
     } else {
       clEl.textContent = inst.contract_label || inst.price_type || 'Market Price';
     }
@@ -931,8 +937,15 @@ async function openCommodityModal(key) {
     apiFetch('/api/history/' + key + '?range=' + currentRange),
     apiFetch('/api/summary/' + key),
   ]);
-  if (histRes && histRes.ok) renderChart(await histRes.json());
-  else showChartError();
+  if (histRes && histRes.ok) {
+    const histData = await histRes.json();
+    if (histData && histData.error) showChartError(histData.error);
+    else renderChart(histData);
+  } else {
+    let reason = histRes ? ('HTTP ' + histRes.status) : 'Network error';
+    try { const j = await histRes.json(); if (j && j.error) reason = j.error; } catch(_) {}
+    showChartError(reason);
+  }
   if (summRes && summRes.ok) {
     const data = await summRes.json();
     renderArticles(data.articles, inst.accent);
@@ -956,9 +969,16 @@ async function changeRange(range) {
   resetChart();
   try {
     const res = await apiFetch('/api/history/' + currentKey + '?range=' + range);
-    if (res && res.ok) renderChart(await res.json());
-    else showChartError();
-  } catch(e) { showChartError(); }
+    if (res && res.ok) {
+      const histData = await res.json();
+      if (histData && histData.error) showChartError(histData.error);
+      else renderChart(histData);
+    } else {
+      let reason = res ? ('HTTP ' + res.status) : 'Network error';
+      try { const j = await res.json(); if (j && j.error) reason = j.error; } catch(_) {}
+      showChartError(reason);
+    }
+  } catch(e) { showChartError(e.message || 'Network error'); }
 }
 
 function closeCommodityModal() {
@@ -1003,6 +1023,9 @@ async function loadTermStructure(key) {
   const sumEl = document.getElementById('curve-summary');
   if (!tph || !tcv) return;
 
+  const inst = instruments.find(i => i.key === key);
+  const instName = inst ? inst.label : key;
+
   if (termChart) { termChart.destroy(); termChart = null; }
   tph.style.display = 'flex';
   tph.innerHTML = '<span class="spin"></span>&nbsp;Loading curve\u2026';
@@ -1012,12 +1035,21 @@ async function loadTermStructure(key) {
   try {
     const res = await apiFetch('/api/curve/' + key);
     if (!res || !res.ok) {
-      tph.innerHTML = '<span style="color:var(--red);font-size:0.8rem">Curve data unavailable.</span>';
+      let reason = res ? ('HTTP ' + res.status) : 'Network error';
+      try { const j = await res.json(); if (j && j.error) reason = j.error; } catch(_) {}
+      tph.innerHTML = `<span style="color:var(--red);font-size:0.8rem" data-error="${esc(reason)}">Term structure unavailable \u2014 ${esc(instName)}: ${esc(reason)}</span>`;
       return;
     }
-    renderTermStructure(await res.json());
+    const data = await res.json();
+    if (data && data.error) {
+      tph.innerHTML = `<span style="color:var(--red);font-size:0.8rem" data-error="${esc(data.error)}">Term structure unavailable \u2014 ${esc(instName)}: ${esc(data.error)}</span>`;
+      tcv.style.display = 'none';
+      return;
+    }
+    renderTermStructure(data);
   } catch(e) {
-    tph.innerHTML = '<span style="color:var(--red);font-size:0.8rem">Error loading curve.</span>';
+    const msg = e.message || 'Network error';
+    tph.innerHTML = `<span style="color:var(--red);font-size:0.8rem" data-error="${esc(msg)}">Term structure unavailable \u2014 ${esc(instName)}: ${esc(msg)}</span>`;
   }
 }
 
@@ -1030,8 +1062,16 @@ function renderTermStructure(data) {
 
   if (valid.length < 2) {
     tph.style.display = 'flex';
-    tph.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">' +
-      (data.error || 'Insufficient contract data for term structure.') + '</span>';
+    let insuffMsg;
+    if (data.error) {
+      insuffMsg = 'Term structure unavailable \u2014 ' + data.error;
+    } else if (valid.length === 0) {
+      const hint = data.debug_hint ? ' (' + data.debug_hint + ')' : '';
+      insuffMsg = 'No contract prices available \u2014 0 contracts priced' + hint;
+    } else {
+      insuffMsg = 'Insufficient data \u2014 1 contract priced (minimum 2 required)';
+    }
+    tph.innerHTML = '<span style="color:var(--muted);font-size:0.8rem" data-contracts="' + valid.length + '">' + esc(insuffMsg) + '</span>';
     tcv.style.display = 'none';
     return;
   }
@@ -1140,13 +1180,14 @@ function resetChart() {
   if (chart) { chart.destroy(); chart = null; }
 }
 
-function showChartError() {
+function showChartError(reason) {
   const ph = document.getElementById('chart-ph');
   ph.style.display = 'flex';
   const inst = currentKey ? instruments.find(i => i.key === currentKey) : null;
   const label = inst ? inst.label : '';
+  const reasonText = reason ? ' \u2014 ' + esc(reason) : '';
   ph.innerHTML =
-    `<span style="color:var(--red);font-size:0.8rem">Chart unavailable${label ? ' \u2014 ' + esc(label) : ''}</span>` +
+    `<span style="color:var(--red);font-size:0.8rem" data-error="${esc(reason || 'unknown')}">Chart unavailable${label ? ' \u2014 ' + esc(label) : ''}${reasonText}</span>` +
     `&ensp;<button class="chart-retry-btn" onclick="changeRange(currentRange)">Retry</button>`;
 }
 
@@ -1157,7 +1198,11 @@ function renderChart(hist) {
   // Guard: if the response is missing required fields, show an error instead of crashing
   if (!hist || !Array.isArray(hist.prices) || hist.prices.length === 0 ||
       !Array.isArray(hist.labels) || hist.labels.length === 0) {
-    showChartError();
+    if (cv) cv.style.display = 'none';
+    if (ph) {
+      ph.style.display = 'flex';
+      ph.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No price history available</span>';
+    }
     return;
   }
 

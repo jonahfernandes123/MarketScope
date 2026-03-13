@@ -537,7 +537,7 @@ body {
 .mover-pct  { font-weight: 700; font-variant-numeric: tabular-nums; }
 .up   { color: var(--green); }
 .down { color: var(--red); }
-.neu  { color: var(--dim); }
+.neu  { color: var(--muted); }
 
 /* Spinner */
 .spin {

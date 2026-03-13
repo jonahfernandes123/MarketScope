@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.market_data import fetch_bitcoin, fetch_ethereum, fetch_eurusd, fetch_yf
+from services.market_data import fetch_bitcoin, fetch_ethereum, fetch_eurusd, fetch_usdcnh, fetch_yf
 
 
 # ── Instrument registry ──────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ INSTRUMENTS: list[dict] = [
         "key":            "eurusd",
         "label":          "EUR / USD",
         "fetch":          fetch_eurusd,
-        "provider":       "frankfurter",
+        "provider":       "yfinance",  # primary source is yfinance intraday (~15-min delayed); Frankfurter ECB is the price fallback only
         "prefix":         "",
         "suffix":         "",
         "decimals":       4,
@@ -202,7 +202,7 @@ INSTRUMENTS: list[dict] = [
     {
         "key":            "usdcnh",
         "label":          "USD / CNH",
-        "fetch":          lambda: fetch_yf("CNH=X"),
+        "fetch":          fetch_usdcnh,
         "provider":       "yfinance",
         "prefix":         "",
         "suffix":         "",
@@ -237,10 +237,15 @@ INSTRUMENTS: list[dict] = [
         "price_type":     "futures",
         "spot_available": False,   # Dated Brent is Platts/OPIS — paid
         "contract_label": "ICE Front (BZ=F)",
-        "curve_enabled":  True,
-        "curve_root":     "BZ",
-        "curve_months":   ["F","G","H","J","K","M","N","Q","U","V","X","Z"],
-        "curve_n":        8,
+        # ICE Brent individual contract months (BZJ26=F, BZK26=F, etc.) are not
+        # reliably available via Yahoo Finance — the chart endpoint returns empty
+        # DataFrames even with explicit date ranges for most back-month BZ symbols.
+        # Use a paid data provider (Refinitiv, Bloomberg, ICE Data Services) for
+        # a full Brent forward curve.  The Term Structure tab is hidden when False.
+        "curve_enabled":  False,
+        "curve_root":     None,
+        "curve_months":   [],
+        "curve_n":        0,
     },
     {
         "key":            "wti",

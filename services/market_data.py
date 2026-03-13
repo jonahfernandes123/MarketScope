@@ -420,6 +420,89 @@ def fetch_yf(ticker: str) -> tuple:
     return price, prev_price, changes
 
 
+def fetch_usdcnh() -> tuple:
+    """Fetch USD/CNH (offshore Chinese yuan) price and changes.
+
+    CNH=X is the primary Yahoo Finance ticker for the offshore yuan.
+    It often returns sparse daily history (fewer than 2 rows), which prevents
+    change_1d from being computed.  In that case we fall back to USDCNH=X,
+    which is an alternative Yahoo alias for the same pair.
+
+    If neither symbol provides at least 2 daily rows, change_1d (and the other
+    period changes) are returned as None — the UI will display "—" rather than
+    a blank or fabricated value.
+    """
+    if not YFINANCE_AVAILABLE:
+        raise RuntimeError("yfinance not installed — run: pip install yfinance")
+
+    _PRIMARY   = "CNH=X"
+    _FALLBACK  = "USDCNH=X"
+
+    def _try_ticker(ticker: str):
+        """Return (intra_price, cd) or (None, None) if data is insufficient."""
+        hist_intra = _yf_fetch(ticker, "1d", "5m")
+        if hist_intra is None or hist_intra.empty:
+            hist_intra = _yf_fetch(ticker, "5d", "5m")
+
+        hist_daily = _yf_fetch(ticker, "1y", "1d")
+        if hist_daily is None or hist_daily.empty:
+            hist_daily = _yf_fetch(ticker, "5d", "1d")
+
+        intra_price = None
+        if hist_intra is not None and not hist_intra.empty:
+            ci = hist_intra["Close"].dropna()
+            if len(ci) >= 1:
+                intra_price = float(ci.iloc[-1])
+
+        cd = None
+        if hist_daily is not None and not hist_daily.empty:
+            cd_raw = hist_daily["Close"].dropna()
+            if not cd_raw.empty:
+                cd = cd_raw
+
+        # Sanity-check intraday vs daily (>20% divergence → discard intraday)
+        if intra_price is not None and cd is not None and len(cd) >= 1:
+            daily_last = float(cd.iloc[-1])
+            if daily_last > 0 and abs(intra_price - daily_last) / daily_last > 0.20:
+                intra_price = None
+
+        return intra_price, cd
+
+    intra_price, cd = _try_ticker(_PRIMARY)
+
+    # Fall back to the alternative alias if the primary returned no usable daily series
+    if cd is None or len(cd) < 2:
+        intra2, cd2 = _try_ticker(_FALLBACK)
+        if cd2 is not None and (cd is None or len(cd2) > len(cd)):
+            cd = cd2
+        if intra_price is None and intra2 is not None:
+            intra_price = intra2
+
+    # Derive current price
+    price = intra_price
+    if price is None and cd is not None and len(cd) >= 1:
+        price = float(cd.iloc[-1])
+
+    if price is None:
+        raise ValueError("No USD/CNH price from CNH=X or USDCNH=X")
+
+    prev_price = None
+    changes = {"change_1d": None, "change_1w": None, "change_1mo": None, "change_1y": None}
+    # change_1d is None when yfinance returns fewer than 2 daily rows for CNH=X /
+    # USDCNH=X — this is a known data-availability limitation of Yahoo Finance for
+    # this pair; the UI will display "—" rather than a blank or fabricated value.
+
+    if cd is not None and len(cd) >= 2:
+        changes = _compute_changes(cd)
+        ref = _daily_prev_close(cd)
+        if ref is not None and ref != 0:
+            prev_price = ref
+            if intra_price is not None:
+                changes["change_1d"] = round((intra_price - ref) / ref * 100, 3)
+
+    return price, prev_price, changes
+
+
 # ── History fetchers (range-aware) ──────────────────────────────────────────────
 
 # Date format applied to chart labels for each time range
