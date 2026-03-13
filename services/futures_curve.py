@@ -20,24 +20,27 @@ Data quality note:
   excluded from the curve chart but listed as "unavailable" in the
   contracts array.
 
-Fetch strategy for back-month futures (why period= fails):
-  Yahoo Finance's /v8/finance/chart endpoint does NOT return OHLCV rows
-  for specific-expiry back-month futures (e.g. CLJ26=F) when called with
-  the period= shorthand ("5d", "1mo", etc.).  The endpoint requires explicit
-  start=/end= date parameters to return historical bars for these symbols.
-  This is the root cause of the "No contract prices available" error with
-  the previous history(period="5d") approach.
+Fetch strategy for back-month futures (why Ticker.history() fails):
+  Yahoo Finance's /v8/finance/chart API endpoint serves OHLCV data for
+  specific-expiry futures contracts BUT yfinance's Ticker.history() wrapper
+  applies additional validation/adjustment that rejects or discards the data
+  for these symbols.  yf.download() uses a different internal code path that
+  bypasses this validation and directly hits the Yahoo download endpoint,
+  which reliably returns OHLCV for active futures contracts.
 
   The fix is:
-    Tier 1 — history(start=..., end=...) with an explicit 30-day window.
-              Reliably returns the last traded bar for COMEX/NYMEX back months.
-    Tier 2 — info["regularMarketPrice"].
-              Yahoo /v10/finance/quoteSummary populates regularMarketPrice
-              for actively-traded back-month futures even when the chart
-              endpoint fails.
-    Tier 3 — fast_info.last_price.
-              Yahoo /v7/finance/quote; frequently NaN for back-month futures.
-              Kept as last resort.
+    Tier 1 — yf.download() with period="1mo".
+              More reliable than Ticker.history() for specific-expiry futures.
+              Handles MultiIndex DataFrame output when downloading a single
+              symbol and normalises it to a flat DataFrame before extracting
+              the last Close price.
+    Tier 2 — Ticker.history(period="1mo").
+              Fallback in case yf.download() fails for a given symbol.
+              Uses period= (not explicit dates) as the explicit date approach
+              also exhibits the same validation issues.
+    Tier 3 — info.get("regularMarketPrice").
+              Yahoo /v10/finance/quoteSummary; slower but often populated
+              for actively-traded back-month futures when chart endpoints fail.
 """
 
 from __future__ import annotations
@@ -47,9 +50,10 @@ import logging
 import math
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 try:
+    import pandas as pd
     import yfinance as yf
     _YF_AVAILABLE = True
 except ImportError:
@@ -146,77 +150,115 @@ def _fetch_yf_price(symbol: str) -> float | None:
 
     Three-tier fetch strategy (most reliable first for back-month contracts):
 
-      Tier 1: history(start=..., end=...) with explicit date range.
-        Yahoo Finance's chart endpoint requires explicit start/end dates to
-        return OHLCV rows for specific-expiry back-month futures (e.g.
-        CLJ26=F, GCM26=F).  The period= shorthand ("5d", "1mo") does NOT
-        work for these symbols and returns empty DataFrames — this was the
-        root cause of "No contract prices available".  An explicit 30-day
-        window anchored to today's date reliably retrieves the last traded
-        bar for COMEX/NYMEX back months.
+      Tier 1: yf.download() with period="1mo".
+        Uses a different internal code path than Ticker.history() and bypasses
+        the validation/adjustment that causes Ticker.history() to return empty
+        DataFrames for specific-expiry back-month futures (e.g. CLJ26=F).
+        yf.download() for a single symbol returns a MultiIndex DataFrame;
+        column level 0 is normalised away before extracting the last Close.
 
-      Tier 2: info["regularMarketPrice"].
-        Yahoo /v10/finance/quoteSummary populates regularMarketPrice for
-        actively-traded back-month futures even when the chart endpoint
-        returns empty.  Slightly slower due to the extra round-trip.
+      Tier 2: Ticker.history(period="1mo").
+        Fallback for cases where yf.download() fails.  Uses period= rather
+        than explicit dates — the explicit date approach exhibited the same
+        issues as the old Ticker.history() calls.
 
-      Tier 3: fast_info.last_price — Yahoo /v7/finance/quote.
-        Frequently NaN for non-front-month futures (Yahoo does not populate
-        regularMarketPrice in the quote API for back months).  Kept only as
-        a last-resort fallback.
+      Tier 3: info.get("regularMarketPrice").
+        Yahoo /v10/finance/quoteSummary; slower but often populated for
+        actively-traded back-month futures when both chart endpoints fail.
 
     Returns None if all three tiers fail.  Never raises.
     """
     if not _YF_AVAILABLE:
         return None
 
-    ticker_obj = yf.Ticker(symbol)
-
-    # Tier 1: explicit date-range history — the correct call for back-month futures.
-    # period= shorthands fail because Yahoo's chart API maps them to relative
-    # timestamps that are rejected for specific-expiry contract symbols.
-    # Explicit start/end bypasses this restriction.
+    # Tier 1: yf.download() — more reliable than Ticker.history() for specific-expiry futures.
     try:
-        end_dt   = datetime.now(timezone.utc)
-        start_dt = end_dt - timedelta(days=30)
-        hist = ticker_obj.history(
-            start=start_dt.strftime("%Y-%m-%d"),
-            end=end_dt.strftime("%Y-%m-%d"),
+        df = yf.download(
+            symbol,
+            period="1mo",
             interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False,
         )
+        if df is not None and not df.empty:
+            # yf.download() returns a MultiIndex DataFrame when downloading one symbol.
+            # Normalise to a flat DataFrame by dropping the outer ticker level.
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            closes = df["Close"].dropna() if "Close" in df.columns else pd.Series()
+            price = _safe_positive_float(closes.iloc[-1]) if len(closes) >= 1 else None
+            if price is not None:
+                log.debug("curve tier1 (download) OK for %s: %.4f", symbol, price)
+                return round(price, 6)
+        log.debug("curve tier1 (download) empty for %s", symbol)
+    except Exception as exc:
+        log.debug("curve tier1 (download) failed for %s: %s", symbol, exc)
+
+    # Tier 2: Ticker.history(period="1mo") — fallback when yf.download() fails.
+    try:
+        ticker_obj = yf.Ticker(symbol)
+        hist = ticker_obj.history(period="1mo", interval="1d")
         if hist is not None and not hist.empty:
             closes = hist["Close"].dropna()
             price = _safe_positive_float(closes.iloc[-1]) if len(closes) >= 1 else None
             if price is not None:
-                log.debug("curve tier1 (explicit-range history) OK for %s: %.4f", symbol, price)
+                log.debug("curve tier2 (Ticker.history period) OK for %s: %.4f", symbol, price)
                 return round(price, 6)
-        log.debug("curve tier1 (explicit-range history) empty for %s", symbol)
+        log.debug("curve tier2 (Ticker.history period) empty for %s", symbol)
     except Exception as exc:
-        log.debug("curve tier1 (explicit-range history) failed for %s: %s", symbol, exc)
+        log.debug("curve tier2 (Ticker.history period) failed for %s: %s", symbol, exc)
 
-    # Tier 2: quoteSummary regularMarketPrice — works for actively-traded back months.
+    # Tier 3: quoteSummary regularMarketPrice — last resort.
     try:
+        ticker_obj = yf.Ticker(symbol)
         info  = ticker_obj.info
         price = _safe_positive_float(info.get("regularMarketPrice"))
         if price is not None:
-            log.debug("curve tier2 (info.regularMarketPrice) OK for %s: %.4f", symbol, price)
+            log.debug("curve tier3 (info.regularMarketPrice) OK for %s: %.4f", symbol, price)
             return round(price, 6)
-        log.debug("curve tier2 (info.regularMarketPrice) missing/zero for %s", symbol)
+        log.debug("curve tier3 (info.regularMarketPrice) missing/zero for %s", symbol)
     except Exception as exc:
-        log.debug("curve tier2 (info.regularMarketPrice) failed for %s: %s", symbol, exc)
-
-    # Tier 3: quote API fast_info — last resort; often NaN for back-month futures.
-    try:
-        price = _safe_positive_float(ticker_obj.fast_info.last_price)
-        if price is not None:
-            log.debug("curve tier3 (fast_info.last_price) OK for %s: %.4f", symbol, price)
-            return round(price, 6)
-        log.debug("curve tier3 (fast_info.last_price) NaN/zero for %s", symbol)
-    except Exception as exc:
-        log.debug("curve tier3 (fast_info.last_price) failed for %s: %s", symbol, exc)
+        log.debug("curve tier3 (info.regularMarketPrice) failed for %s: %s", symbol, exc)
 
     log.warning("curve: all tiers failed for %s — symbol may be unlisted in Yahoo Finance", symbol)
     return None
+
+
+def _bulk_download(symbols: list[str]) -> dict[str, float | None]:
+    """Attempt to fetch all symbols in one yf.download() call.
+
+    More efficient than individual calls and avoids per-symbol rate limits.
+    Returns a dict mapping symbol -> price (or None).
+    """
+    try:
+        symbols_str = " ".join(symbols)
+        df = yf.download(
+            symbols_str,
+            period="1mo",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+            group_by="ticker",
+        )
+        if df is None or df.empty:
+            return {}
+        result = {}
+        for sym in symbols:
+            try:
+                if isinstance(df.columns, pd.MultiIndex) and sym in df.columns.get_level_values(0):
+                    closes = df[sym]["Close"].dropna()
+                else:
+                    closes = pd.Series()
+                price = _safe_positive_float(closes.iloc[-1]) if len(closes) >= 1 else None
+                result[sym] = price
+            except Exception:
+                result[sym] = None
+        return result
+    except Exception as exc:
+        log.debug("bulk download failed: %s", exc)
+        return {}
 
 
 def _fetch_chain_prices(
@@ -230,19 +272,38 @@ def _fetch_chain_prices(
     Returns: dict mapping symbol -> price (None if unavailable).
     Source label: "delayed" (yfinance ~15-min delayed).
 
-    Uses a bounded thread pool to parallelise yfinance calls without
-    triggering rate-limit bans (max 4 concurrent requests).
+    Strategy:
+      1. Attempt a single bulk yf.download() for all symbols at once —
+         more efficient and avoids per-symbol rate limits.
+      2. For any symbols that returned None from the bulk call, fall back to
+         individual _fetch_yf_price() calls via a bounded thread pool
+         (max_workers=2 to avoid Yahoo Finance rate-limiting).
     """
+    sym_list = [sym for sym, _ in symbols]
+
+    # Step 1: bulk download attempt
     prices: dict[str, float | None] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        fut_map = {pool.submit(_fetch_yf_price, sym): sym for sym, _ in symbols}
-        for fut in concurrent.futures.as_completed(fut_map):
-            sym = fut_map[fut]
-            try:
-                prices[sym] = fut.result()
-            except Exception as exc:
-                log.warning("curve fetch error for %s: %s", sym, exc)
-                prices[sym] = None
+    if _YF_AVAILABLE:
+        log.debug("curve: attempting bulk download for %d symbols", len(sym_list))
+        bulk = _bulk_download(sym_list)
+        prices.update(bulk)
+        got = sum(1 for v in bulk.values() if v is not None)
+        log.debug("curve: bulk download returned %d/%d prices", got, len(sym_list))
+
+    # Step 2: individual fallback for symbols not priced by the bulk call
+    missing = [sym for sym in sym_list if prices.get(sym) is None]
+    if missing:
+        log.debug("curve: individual fallback for %d symbols", len(missing))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            fut_map = {pool.submit(_fetch_yf_price, sym): sym for sym in missing}
+            for fut in concurrent.futures.as_completed(fut_map):
+                sym = fut_map[fut]
+                try:
+                    prices[sym] = fut.result()
+                except Exception as exc:
+                    log.warning("curve fetch error for %s: %s", sym, exc)
+                    prices[sym] = None
+
     return prices
 
 

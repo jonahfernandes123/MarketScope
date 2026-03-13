@@ -863,7 +863,7 @@ let chart         = null;
 let termChart     = null;
 let currentKey    = null;
 let currentRange  = '1mo';
-let currentChartTab = 'price';  // 'price' | 'term'
+let currentChartTab = 'price';  // 'price' | 'spot' | 'term'
 
 async function openCommodityModal(key) {
   const inst = instruments.find(i => i.key === key);
@@ -913,7 +913,15 @@ async function openCommodityModal(key) {
   const termTab = document.getElementById('chart-tab-term');
   if (termTab) termTab.style.display = inst.curve_enabled ? '' : 'none';
 
+  // Show/hide Spot tab (only for futures instruments that have a free spot source)
+  const spotTab = document.getElementById('chart-tab-spot');
+  if (spotTab) {
+    spotTab.style.display = (inst.price_type === 'futures' && inst.spot_available) ? '' : 'none';
+  }
+
   // Rename the price tab to reflect what series is shown
+  // For futures with a separate spot tab, the price tab shows "Front Future"
+  // For crypto (price_type === 'spot'), the price tab IS the spot — label "Spot"
   const priceTab = document.getElementById('chart-tab-price');
   if (priceTab) {
     if (inst.price_type === 'spot') priceTab.textContent = 'Spot';
@@ -967,18 +975,22 @@ async function changeRange(range) {
   if (chgEl) { chgEl.textContent = '\u2026'; chgEl.className = 'modal-chg'; }
 
   resetChart();
-  try {
-    const res = await apiFetch('/api/history/' + currentKey + '?range=' + range);
-    if (res && res.ok) {
-      const histData = await res.json();
-      if (histData && histData.error) showChartError(histData.error);
-      else renderChart(histData);
-    } else {
-      let reason = res ? ('HTTP ' + res.status) : 'Network error';
-      try { const j = await res.json(); if (j && j.error) reason = j.error; } catch(_) {}
-      showChartError(reason);
-    }
-  } catch(e) { showChartError(e.message || 'Network error'); }
+  if (currentChartTab === 'spot') {
+    loadSpotChart(currentKey, range);
+  } else {
+    try {
+      const res = await apiFetch('/api/history/' + currentKey + '?range=' + range);
+      if (res && res.ok) {
+        const histData = await res.json();
+        if (histData && histData.error) showChartError(histData.error);
+        else renderChart(histData);
+      } else {
+        let reason = res ? ('HTTP ' + res.status) : 'Network error';
+        try { const j = await res.json(); if (j && j.error) reason = j.error; } catch(_) {}
+        showChartError(reason);
+      }
+    } catch(e) { showChartError(e.message || 'Network error'); }
+  }
 }
 
 function closeCommodityModal() {
@@ -1004,15 +1016,61 @@ function _setChartTabUI(tab) {
   const priceWrap = document.getElementById('price-chart-wrap');
   const termWrap  = document.getElementById('term-chart-wrap');
   const rangeWrap = document.getElementById('range-tabs-wrap');
-  if (priceWrap) priceWrap.style.display = tab === 'price' ? '' : 'none';
-  if (termWrap)  termWrap.style.display  = tab === 'term'  ? '' : 'none';
-  if (rangeWrap) rangeWrap.style.display = tab === 'price' ? '' : 'none';
+  // Both 'price' and 'spot' render into the same price-chart-wrap canvas
+  if (priceWrap) priceWrap.style.display = (tab === 'price' || tab === 'spot') ? '' : 'none';
+  if (termWrap)  termWrap.style.display  = tab === 'term' ? '' : 'none';
+  if (rangeWrap) rangeWrap.style.display = tab !== 'term' ? '' : 'none';
 }
 
 function setChartTab(tab) {
   if (tab === currentChartTab) return;
   _setChartTabUI(tab);
-  if (tab === 'term') loadTermStructure(currentKey);
+  const clEl = document.getElementById('m-contract-label');
+  if (tab === 'term') {
+    loadTermStructure(currentKey);
+  } else if (tab === 'spot') {
+    if (clEl) clEl.textContent = 'Spot (indicative) \u00b7 ~15-min delayed';
+    resetChart();
+    loadSpotChart(currentKey, currentRange);
+  } else if (tab === 'price') {
+    // Restore the futures contract label subtitle
+    const inst = instruments.find(i => i.key === currentKey);
+    if (clEl && inst) clEl.textContent = inst.contract_label || 'Front Future';
+    resetChart();
+    loadPriceChart(currentKey, currentRange);
+  }
+}
+
+async function loadPriceChart(key, range) {
+  if (!key) return;
+  try {
+    const res = await apiFetch('/api/history/' + key + '?range=' + range);
+    if (res && res.ok) {
+      const histData = await res.json();
+      if (histData && histData.error) showChartError(histData.error);
+      else renderChart(histData);
+    } else {
+      let reason = res ? ('HTTP ' + res.status) : 'Network error';
+      try { const j = await res.json(); if (j && j.error) reason = j.error; } catch(_) {}
+      showChartError(reason);
+    }
+  } catch(e) { showChartError(e.message || 'Network error'); }
+}
+
+async function loadSpotChart(key, range) {
+  if (!key) return;
+  try {
+    const res = await apiFetch('/api/history/spot/' + key + '?range=' + range);
+    if (res && res.ok) {
+      const histData = await res.json();
+      if (histData && histData.error) showChartError(histData.error);
+      else renderChart(histData);
+    } else {
+      let reason = res ? ('HTTP ' + res.status) : 'Network error';
+      try { const j = await res.json(); if (j && j.error) reason = j.error; } catch(_) {}
+      showChartError(reason);
+    }
+  } catch(e) { showChartError(e.message || 'Network error'); }
 }
 
 /* ── Term structure / forward curve ───────────────────────────────────────── */

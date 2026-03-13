@@ -173,6 +173,7 @@ def api_prices():
             "spot_available": inst.get("spot_available", False),
             "contract_label": inst.get("contract_label"),
             "curve_enabled":  inst.get("curve_enabled", False),
+            "spot_ticker":    inst.get("spot_ticker"),
             "price_status":   _price_status(inst, d),
         })
     return jsonify(result)
@@ -202,6 +203,33 @@ def api_history(key: str):
             "label": inst["label"], "prefix": inst["prefix"],
             "suffix": inst["suffix"], "decimals": inst["decimals"],
             "thousands": inst["thousands"], "accent": inst["accent"],
+        })
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/history/spot/<key>")
+@login_required
+def api_history_spot(key: str):
+    inst = INSTRUMENT_MAP.get(key)
+    if not inst:
+        return jsonify({"error": "Unknown instrument"}), 404
+    spot_ticker = inst.get("spot_ticker")
+    if not spot_ticker:
+        return jsonify({"error": "No spot source for this instrument"}), 400
+    range_param = freq.args.get("range", "1mo")
+    if range_param not in ("1d", "1w", "1mo", "1y"):
+        range_param = "1mo"
+    try:
+        data = _history_yf(spot_ticker, range_param)
+        data.update({
+            "label":     inst["label"] + " (Spot)",
+            "prefix":    inst["prefix"],
+            "suffix":    inst["suffix"],
+            "decimals":  inst["decimals"],
+            "thousands": inst["thousands"],
+            "accent":    inst["accent"],
         })
         return jsonify(data)
     except Exception as exc:
