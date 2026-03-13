@@ -877,14 +877,14 @@ async function openCommodityModal(key) {
   // Contract label / price type subtitle
   const clEl = document.getElementById('m-contract-label');
   if (clEl) {
-    if (inst.contract_label) {
-      clEl.textContent = inst.contract_label;
+    if (inst.price_type === 'futures') {
+      clEl.textContent = inst.contract_label || 'Front Future';
     } else if (inst.price_type === 'spot') {
-      clEl.textContent = 'Spot \u00b7 ' + (inst.price_status === 'live' ? 'Live' : 'Delayed');
+      clEl.textContent = 'Spot \u00b7 ' + (inst.price_status === 'live' ? 'Live' : '\u223015min delayed');
     } else if (inst.price_type === 'fx_spot') {
-      clEl.textContent = 'FX Spot \u00b7 Interbank';
+      clEl.textContent = 'FX Spot \u00b7 Interbank (\u223015min delayed)';
     } else {
-      clEl.textContent = '';
+      clEl.textContent = inst.contract_label || inst.price_type || 'Market Price';
     }
   }
 
@@ -1153,6 +1153,14 @@ function showChartError() {
 function renderChart(hist) {
   const ph = document.getElementById('chart-ph');
   const cv = document.getElementById('price-chart');
+
+  // Guard: if the response is missing required fields, show an error instead of crashing
+  if (!hist || !Array.isArray(hist.prices) || hist.prices.length === 0 ||
+      !Array.isArray(hist.labels) || hist.labels.length === 0) {
+    showChartError();
+    return;
+  }
+
   ph.style.display = 'none';
   cv.style.display = 'block';
 

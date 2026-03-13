@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import uuid
+from datetime import datetime, timezone
 from functools import wraps
 
 import config
@@ -230,6 +231,129 @@ def api_curve(key: str):
         return jsonify(data)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# TODO: REMOVE THIS DEBUG ENDPOINT before going to production.
+# Temporary diagnostic route — requires login, returns raw tier-by-tier
+# fetch results for every contract symbol in one instrument's curve chain.
+# Usage: GET /api/curve/debug/<instrument_key>
+# Example: /api/curve/debug/wti  or  /api/curve/debug/gold
+@app.route("/api/curve/debug/<key>")
+@login_required
+def api_curve_debug(key: str):
+    """DEBUG/TEMP: Per-symbol, per-tier fetch report for one instrument's curve chain.
+
+    For each generated contract symbol the response includes:
+      - symbol    : the yfinance ticker string (e.g. CLJ26=F)
+      - label     : human-readable expiry label (e.g. "Apr 2026")
+      - tier1_5d  : price from history(period="5d") via shared cache, or null
+      - tier2_1mo : price from history(period="1mo") direct, or null
+      - tier3_fi  : price from fast_info.last_price, or null
+      - final     : the price _fetch_yf_price() would return (first non-null tier)
+      - error     : error string if all tiers failed, else null
+
+    Source label: delayed (~15-min delayed Yahoo Finance data)
+    """
+    import math
+
+    inst = INSTRUMENT_MAP.get(key)
+    if not inst:
+        return jsonify({"error": "Unknown instrument"}), 404
+    if not inst.get("curve_enabled"):
+        return jsonify({"error": f"curve_enabled=False for {key}"}), 400
+
+    from services.futures_curve import _upcoming_contracts
+    from services.market_data import _yf_fetch, YFINANCE_AVAILABLE
+
+    if not YFINANCE_AVAILABLE:
+        return jsonify({"error": "yfinance not installed"}), 500
+
+    try:
+        import yfinance as yf
+    except ImportError:
+        return jsonify({"error": "yfinance not installed"}), 500
+
+    root   = inst["curve_root"]
+    months = inst["curve_months"]
+    n      = inst.get("curve_n", 8)
+
+    symbols = _upcoming_contracts(root, months, n=n)
+
+    def _safe_float(val) -> float | None:
+        """Return float or None; treats NaN and non-positive as None."""
+        try:
+            f = float(val)
+            if math.isnan(f) or f <= 0:
+                return None
+            return round(f, 6)
+        except Exception:
+            return None
+
+    def _tier1(sym: str) -> tuple[float | None, str | None]:
+        try:
+            hist = _yf_fetch(sym, "5d", "1d")
+            if hist is not None and not hist.empty:
+                closes = hist["Close"].dropna()
+                if len(closes) >= 1:
+                    return _safe_float(closes.iloc[-1]), None
+            return None, "empty or no data"
+        except Exception as exc:
+            return None, str(exc)
+
+    def _tier2(sym: str) -> tuple[float | None, str | None]:
+        try:
+            hist = yf.Ticker(sym).history(period="1mo", interval="1d")
+            if hist is not None and not hist.empty:
+                closes = hist["Close"].dropna()
+                if len(closes) >= 1:
+                    return _safe_float(closes.iloc[-1]), None
+            return None, "empty or no data"
+        except Exception as exc:
+            return None, str(exc)
+
+    def _tier3(sym: str) -> tuple[float | None, str | None]:
+        try:
+            price = yf.Ticker(sym).fast_info.last_price
+            v = _safe_float(price)
+            if v is not None:
+                return v, None
+            return None, f"raw value={price!r} (NaN or non-positive)"
+        except Exception as exc:
+            return None, str(exc)
+
+    rows = []
+    for sym, label in symbols:
+        t1_price, t1_err = _tier1(sym)
+        t2_price, t2_err = _tier2(sym)
+        t3_price, t3_err = _tier3(sym)
+
+        final = t1_price if t1_price is not None else (
+            t2_price if t2_price is not None else t3_price
+        )
+        rows.append({
+            "symbol":    sym,
+            "label":     label,
+            "tier1_5d":  {"price": t1_price, "error": t1_err},
+            "tier2_1mo": {"price": t2_price, "error": t2_err},
+            "tier3_fi":  {"price": t3_price, "error": t3_err},
+            "final":     final,
+            "error":     None if final is not None else "all tiers failed",
+        })
+
+    priced_count = sum(1 for r in rows if r["final"] is not None)
+    return jsonify({
+        "debug":        True,
+        "source":       "delayed",
+        "key":          key,
+        "label":        inst["label"],
+        "curve_root":   root,
+        "curve_months": months,
+        "curve_n":      n,
+        "contracts":    rows,
+        "priced":       priced_count,
+        "total":        len(rows),
+        "ts":           datetime.now(timezone.utc).isoformat(),
+    })
 
 
 @app.route("/api/summary/<key>")

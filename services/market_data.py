@@ -448,35 +448,55 @@ def _fmt_index_labels(index, fmt: str) -> list[str]:
 def _history_bitcoin(range_param: str) -> dict:
     days_map = {"1d": 1, "1w": 7, "1mo": 30, "1y": 365}
     days = days_map.get(range_param, 30)
-    params: dict = {"vs_currency": "usd", "days": days}
-    if days > 7:
-        params["interval"] = "daily"
-    data = _cg_get(
-        "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart",
-        params=params, timeout=15,
-    )
-    pts = data["prices"]
     fmt = _RANGE_LABEL_FMT.get(range_param, "%b %d")
-    labels = [datetime.utcfromtimestamp(p[0] / 1000).strftime(fmt) for p in pts]
-    prices = [round(p[1], 2) for p in pts]
-    return {"labels": labels, "prices": prices}
+
+    # Primary: CoinGecko market_chart endpoint
+    try:
+        params: dict = {"vs_currency": "usd", "days": days}
+        if days > 7:
+            params["interval"] = "daily"
+        data = _cg_get(
+            "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart",
+            params=params, timeout=15,
+        )
+        pts = data["prices"]
+        if not pts:
+            raise ValueError("Empty prices list from CoinGecko")
+        labels = [datetime.utcfromtimestamp(p[0] / 1000).strftime(fmt) for p in pts]
+        prices = [round(p[1], 2) for p in pts]
+        return {"labels": labels, "prices": prices}
+    except Exception:
+        pass
+
+    # Fallback: yfinance BTC-USD
+    return _history_yf("BTC-USD", range_param)
 
 
 def _history_ethereum(range_param: str) -> dict:
     days_map = {"1d": 1, "1w": 7, "1mo": 30, "1y": 365}
     days = days_map.get(range_param, 30)
-    params: dict = {"vs_currency": "usd", "days": days}
-    if days > 7:
-        params["interval"] = "daily"
-    data = _cg_get(
-        "https://api.coingecko.com/api/v3/coins/ethereum/market_chart",
-        params=params, timeout=15,
-    )
-    pts = data["prices"]
     fmt = _RANGE_LABEL_FMT.get(range_param, "%b %d")
-    labels = [datetime.utcfromtimestamp(p[0] / 1000).strftime(fmt) for p in pts]
-    prices = [round(p[1], 2) for p in pts]
-    return {"labels": labels, "prices": prices}
+
+    # Primary: CoinGecko market_chart endpoint
+    try:
+        params: dict = {"vs_currency": "usd", "days": days}
+        if days > 7:
+            params["interval"] = "daily"
+        data = _cg_get(
+            "https://api.coingecko.com/api/v3/coins/ethereum/market_chart",
+            params=params, timeout=15,
+        )
+        pts = data["prices"]
+        if not pts:
+            raise ValueError("Empty prices list from CoinGecko")
+        labels = [datetime.utcfromtimestamp(p[0] / 1000).strftime(fmt) for p in pts]
+        prices = [round(p[1], 2) for p in pts]
+        return {"labels": labels, "prices": prices}
+    except Exception:
+        pass
+
+    # Fallback: yfinance ETH-USD
+    return _history_yf("ETH-USD", range_param)
 
 
 def _history_eurusd(range_param: str) -> dict:
