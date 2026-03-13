@@ -1103,7 +1103,18 @@ function renderTermStructure(data) {
       const sign = s.spread >= 0 ? '+' : '';
       html += `<span class="curve-spread">F1\u2192F6: ${esc(data.prefix || '')}${sign}${s.spread.toFixed(data.decimals || 2)}${esc(data.suffix || '')} (${sign}${s.pct.toFixed(2)}%)</span>`;
     }
-    html += `<span class="curve-source">${esc(data.source || 'yfinance')} \u00b7 Delayed</span>`;
+    // Build "Source: Yahoo Finance · ~15-min delayed  ·  As of HH:MM UTC"
+    // data.source is the status code ("delayed"), not the provider name; always show Yahoo Finance.
+    let srcText = 'Source: Yahoo Finance \u00b7 ~15-min delayed';
+    if (data.ts) {
+      const d = new Date(data.ts * 1000);
+      if (!isNaN(d)) {
+        const hh = String(d.getUTCHours()).padStart(2, '0');
+        const mm = String(d.getUTCMinutes()).padStart(2, '0');
+        srcText += ' \u00b7 As of ' + hh + ':' + mm + ' UTC';
+      }
+    }
+    html += `<span class="curve-source">${esc(srcText)}</span>`;
     html += '</div>';
     sumEl.innerHTML = html;
   }
