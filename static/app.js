@@ -907,6 +907,14 @@ async function openCommodityModal(key) {
   const termTab = document.getElementById('chart-tab-term');
   if (termTab) termTab.style.display = inst.curve_enabled ? '' : 'none';
 
+  // Rename the price tab to reflect what series is shown
+  const priceTab = document.getElementById('chart-tab-price');
+  if (priceTab) {
+    if (inst.price_type === 'spot') priceTab.textContent = 'Spot';
+    else if (inst.price_type === 'fx_spot') priceTab.textContent = 'FX Spot';
+    else priceTab.textContent = 'Front Future';
+  }
+
   document.querySelectorAll('.range-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.range === currentRange);
   });

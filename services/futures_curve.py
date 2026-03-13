@@ -7,19 +7,34 @@ Contract symbol format (yfinance):  {ROOT}{MONTH_CODE}{YY}=F
   e.g.  CLJ26=F  =  WTI April 2026
         GCM26=F  =  Gold June 2026
 
+Data source limitation:
+  All curve data comes from Yahoo Finance via yfinance (~15-min delayed).
+  Individual contract month coverage is best for COMEX/NYMEX front months;
+  back-month and ICE contracts (e.g. TTF) are unreliable or unlisted in
+  Yahoo Finance and are excluded from curve_enabled instruments.
+  To swap the chain-price source, replace _fetch_chain_prices() only.
+
 Data quality note:
-  All prices come from yfinance and carry a ~15-minute delay.
   The curve reflects last-traded prices, not official settlements.
   Thin/expired contracts may return no data; those are excluded from
-  the curve but listed as "unavailable".
+  the curve chart but listed as "unavailable" in the contracts array.
 """
 
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import threading
 import time
 from datetime import datetime, timezone
+
+try:
+    import yfinance as yf
+    _YF_AVAILABLE = True
+except ImportError:
+    _YF_AVAILABLE = False
+
+log = logging.getLogger(__name__)
 
 # Month code → calendar month number
 _MONTH_CODES: dict[str, int] = {
@@ -43,7 +58,10 @@ def _upcoming_contracts(
 ) -> list[tuple[str, str]]:
     """Generate the next N upcoming contract (symbol, label) pairs.
 
-    Skips months that have already expired in the current calendar year.
+    Skips the current calendar month and earlier — most COMEX/NYMEX contracts
+    expire in the third week of the prior month, so the current-month contract
+    is near-expiry or already expired by the time it would be listed here.
+
     yfinance symbol format: {ROOT}{MONTH_CODE}{YY}=F
     """
     now = datetime.now(timezone.utc)
@@ -55,8 +73,10 @@ def _upcoming_contracts(
     while len(results) < n:
         for code in active_months:
             m = _MONTH_CODES[code]
-            # Skip months that have already expired this year
-            if check_year == cur_year and m < cur_month:
+            # Skip current month and earlier — current-month contracts are
+            # near-expiry (COMEX/NYMEX expire mid-prior-month) and often
+            # return stale or empty data from yfinance.
+            if check_year == cur_year and m <= cur_month:
                 continue
             symbol = f"{root}{code}{str(check_year)[-2:]}=F"
             label = f"{_MONTH_NAMES[m - 1]} {check_year}"
@@ -68,15 +88,36 @@ def _upcoming_contracts(
     return results[:n]
 
 
-def _fetch_one_contract(symbol: str) -> float | None:
-    """Return the latest daily close for a specific futures contract.
+def _fetch_yf_price(symbol: str) -> float | None:
+    """Return the latest price for a specific futures contract symbol.
 
-    Uses the shared yfinance TTL cache so repeated calls are cheap.
-    Returns None if the contract has no data (expired, too far forward, etc.).
-    Never raises.
+    Three-tier fetch strategy (fastest → most reliable):
+      1. fast_info.last_price  — Yahoo quote API; works for active contracts
+         without downloading OHLCV history. Fastest, but returns NaN for
+         very thinly traded or delisted contracts.
+      2. history(period="5d") — daily OHLCV; uses shared TTL cache in
+         market_data. Covers most active front/second months.
+      3. history(period="1mo") — broader window; catches contracts that
+         had no trades in the last 5 calendar days (e.g. long weekends,
+         thin back months).
+
+    Returns None if all three tiers fail. Never raises.
     """
+    if not _YF_AVAILABLE:
+        return None
+
+    # Tier 1: quote API (fast_info)
     try:
-        from services.market_data import _yf_fetch  # local import avoids circularity
+        ticker = yf.Ticker(symbol)
+        price = ticker.fast_info.last_price
+        if price is not None and price == price and price > 0:  # NaN check
+            return round(float(price), 6)
+    except Exception:
+        pass
+
+    # Tier 2: OHLCV 5-day (shared cache)
+    try:
+        from services.market_data import _yf_fetch  # avoid circular import
         hist = _yf_fetch(symbol, "5d", "1d")
         if hist is not None and not hist.empty:
             closes = hist["Close"].dropna()
@@ -84,7 +125,45 @@ def _fetch_one_contract(symbol: str) -> float | None:
                 return round(float(closes.iloc[-1]), 6)
     except Exception:
         pass
+
+    # Tier 3: OHLCV 1-month (direct, no cache)
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1mo", interval="1d")
+        if hist is not None and not hist.empty:
+            closes = hist["Close"].dropna()
+            if len(closes) >= 1:
+                return round(float(closes.iloc[-1]), 6)
+    except Exception:
+        pass
+
     return None
+
+
+def _fetch_chain_prices(
+    symbols: list[tuple[str, str]]
+) -> dict[str, float | None]:
+    """Fetch prices for a list of (symbol, label) contract pairs.
+
+    This is the single swappable source function for the curve chain.
+    To replace the data source (e.g. switch to a paid API), replace
+    this function's body only — the rest of get_curve() is unchanged.
+
+    Returns a dict mapping symbol → price (or None if unavailable).
+    Uses a bounded thread pool to parallelise yfinance calls without
+    triggering rate-limit bans.
+    """
+    prices: dict[str, float | None] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        fut_map = {pool.submit(_fetch_yf_price, sym): sym for sym, _ in symbols}
+        for fut in concurrent.futures.as_completed(fut_map):
+            sym = fut_map[fut]
+            try:
+                prices[sym] = fut.result()
+            except Exception as exc:
+                log.warning("curve fetch error for %s: %s", sym, exc)
+                prices[sym] = None
+    return prices
 
 
 def get_curve(inst: dict) -> dict:
@@ -127,14 +206,17 @@ def get_curve(inst: dict) -> dict:
         }
         return result
 
-    symbols = _upcoming_contracts(root, months, n=n)
+    if not _YF_AVAILABLE:
+        result = {
+            "contracts": [], "curve_state": "insufficient",
+            "front_to_second": None, "front_to_sixth": None,
+            "source": "N/A", "ts": ts,
+            "error": "yfinance not installed — cannot fetch contract chain",
+        }
+        return result
 
-    # Fetch all contracts concurrently (bounded, avoids rate-limit storms)
-    prices: dict[str, float | None] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        futs = {pool.submit(_fetch_one_contract, sym): sym for sym, _ in symbols}
-        for fut in concurrent.futures.as_completed(futs):
-            prices[futs[fut]] = fut.result()
+    symbols = _upcoming_contracts(root, months, n=n)
+    prices = _fetch_chain_prices(symbols)
 
     contracts = [
         {
@@ -149,7 +231,7 @@ def get_curve(inst: dict) -> dict:
     # Analytics on the valid sub-set
     valid = [c for c in contracts if c["price"] is not None]
 
-    curve_state    = "insufficient"
+    curve_state     = "insufficient"
     front_to_second = None
     front_to_sixth  = None
 
@@ -180,7 +262,7 @@ def get_curve(inst: dict) -> dict:
         "front_to_sixth":   front_to_sixth,
         "source":           "yfinance",
         "ts":               ts,
-        "error":            None if valid else "No contract prices available",
+        "error":            None if valid else "No contract prices available from yfinance",
     }
 
     with _curve_lock:
