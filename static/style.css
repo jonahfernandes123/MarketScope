@@ -661,6 +661,17 @@ body {
 .card-hint { position: absolute; bottom: 10px; right: 12px; font-size: 0.58rem; font-weight: 500; color: var(--dim); opacity: 0; transition: opacity 0.18s; letter-spacing: 0.04em; }
 .card:hover .card-hint { opacity: 1; }
 
+/* ── Card price model row (type tag + status dot) ────────────── */
+.card-type-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.card-type-tag  { font-size: 0.58rem; font-weight: 500; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* Status dot — colour-coded data-quality indicator */
+.price-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.price-status-dot.status-live        { background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,0.5); }
+.price-status-dot.status-delayed     { background: #f59e0b; }
+.price-status-dot.status-settlement  { background: #6b7f9e; }
+.price-status-dot.status-unavailable { background: #ef4444; }
+
 /* ── Modal overlay ───────────────────────────────────────────── */
 .overlay {
   display: none; position: fixed; inset: 0;
@@ -743,6 +754,39 @@ body {
 .modal-price-row { display: flex; align-items: baseline; gap: 14px; }
 .modal-price { font-size: 2.15rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
 .modal-chg   { font-size: 1rem; font-weight: 600; }
+.modal-contract-label { font-size: 0.7rem; color: var(--dim); font-weight: 500; letter-spacing: 0.04em; margin-top: 3px; min-height: 1em; }
+/* ── Chart tabs (Price | Term Structure) ─────────────────────── */
+.chart-tabs { display: flex; gap: 3px; }
+.chart-tab {
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  letter-spacing: 0.04em;
+}
+.chart-tab:hover:not(.active) { color: var(--text); background: var(--raised); }
+.chart-tab.active { background: var(--raised); color: var(--text); border-color: rgba(255,255,255,0.15); }
+
+/* ── Forward curve summary bar ───────────────────────────────── */
+.curve-summary { margin-bottom: 10px; min-height: 22px; }
+.curve-summary-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.72rem; }
+.curve-state-badge {
+  padding: 2px 9px; border-radius: 4px;
+  font-weight: 700; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.curve-state-contango      { background: rgba(239,68,68,0.12);   color: #ef4444; }
+.curve-state-backwardation { background: rgba(34,197,94,0.12);   color: #22c55e; }
+.curve-state-flat          { background: rgba(107,127,158,0.12); color: #6b7f9e; }
+.curve-state-insufficient  { background: rgba(107,127,158,0.12); color: #6b7f9e; }
+.curve-spread { color: var(--muted); font-variant-numeric: tabular-nums; }
+.curve-source { color: var(--dim); margin-left: auto; }
+
 .chart-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .chart-section-label  { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: var(--dim); }
 .range-tabs { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }

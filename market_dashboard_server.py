@@ -30,6 +30,7 @@ from flask import (
 from models.instruments import CONTEXT_QUERIES, INSTRUMENT_MAP, INSTRUMENTS, SUMMARIES
 from services.market_data import YFINANCE_AVAILABLE, _history_bitcoin, _history_ethereum, _history_eurusd, _history_yf
 from services.market_engine import engine
+from services.futures_curve import get_curve
 from services.news_fetcher import _fetch_context_news, _fetch_news_for_query, _fetch_yf_news
 from services.user_data import (
     ensure_user_initialized, get_firm_entry, save_firm_entry,
@@ -121,6 +122,29 @@ def logout():
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 
+def _price_status(inst: dict, d: dict) -> str:
+    """Compute a data-quality status string for one instrument snapshot entry.
+
+    Status values:
+      live        — Real-time feed (Binance; sub-second latency)
+      delayed     — ~15-minute delayed market data (yfinance intraday)
+      settlement  — Official daily settlement / fixing (Frankfurter ECB rate)
+      unavailable — No price data at all (cold start or persistent error)
+    """
+    if d.get("price") is None:
+        return "unavailable"
+    if d.get("stale"):
+        return "delayed"   # serving cached value; upstream refresh failed
+    provider = inst.get("provider", "yfinance")
+    if provider == "binance":
+        return "live"
+    # Frankfurter is the ECB daily fixing; yfinance FX/futures are ~15 min delayed.
+    # Both are labelled "delayed" because we primarily use yfinance intraday even for
+    # EUR/USD — the Frankfurter fallback would be "settlement" but we can't distinguish
+    # at this layer without changing the fetch return signature.
+    return "delayed"
+
+
 @app.route("/api/prices")
 @login_required
 def api_prices():
@@ -142,6 +166,13 @@ def api_prices():
             "prefix": inst["prefix"], "suffix": inst["suffix"],
             "decimals": inst["decimals"], "thousands": inst["thousands"],
             "icon": inst["icon"], "accent": inst["accent"],
+            # ── Price model metadata ──────────────────────────────────────────
+            "asset_class":    inst.get("asset_class", "other"),
+            "price_type":     inst.get("price_type", "futures"),
+            "spot_available": inst.get("spot_available", False),
+            "contract_label": inst.get("contract_label"),
+            "curve_enabled":  inst.get("curve_enabled", False),
+            "price_status":   _price_status(inst, d),
         })
     return jsonify(result)
 
@@ -171,6 +202,31 @@ def api_history(key: str):
             "suffix": inst["suffix"], "decimals": inst["decimals"],
             "thousands": inst["thousands"], "accent": inst["accent"],
         })
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/curve/<key>")
+@login_required
+def api_curve(key: str):
+    """Return the futures forward curve (term structure) for one instrument.
+
+    Uses a 5-minute server-side cache.  Only instruments with curve_enabled=True
+    in instruments.py will return meaningful data; others return an empty contract
+    list with curve_state="insufficient".
+    """
+    inst = INSTRUMENT_MAP.get(key)
+    if not inst:
+        return jsonify({"error": "Unknown instrument"}), 404
+    try:
+        data = get_curve(inst)
+        # Attach display-formatting fields so the frontend can render prices
+        data["prefix"]    = inst["prefix"]
+        data["suffix"]    = inst["suffix"]
+        data["decimals"]  = inst["decimals"]
+        data["thousands"] = inst["thousands"]
+        data["label"]     = inst["label"]
         return jsonify(data)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

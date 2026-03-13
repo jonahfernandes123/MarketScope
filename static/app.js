@@ -210,10 +210,17 @@ function renderCards(data) {
       card.id = 'card-' + inst.key;
       card.style.setProperty('--accent', inst.accent);
       card.addEventListener('click', () => openCommodityModal(inst.key));
+      const typeTag = inst.price_type === 'spot' ? 'Spot'
+                    : inst.price_type === 'fx_spot' ? 'FX Spot'
+                    : 'Futures';
       card.innerHTML =
         '<div class="card-accent"></div>' +
         '<div class="card-icon">'  + inst.icon  + '</div>' +
         '<div class="card-name">'  + inst.label + '</div>' +
+        '<div class="card-type-row">' +
+          '<span class="card-type-tag">' + typeTag + '</span>' +
+          '<span class="price-status-dot status-delayed" id="s-' + inst.key + '" title="Loading\u2026"></span>' +
+        '</div>' +
         '<div class="card-price loading" id="p-' + inst.key + '">Loading\u2026</div>' +
         '<div class="card-change"  id="c-' + inst.key + '"></div>' +
         '<div class="card-hint">Click for details \u2192</div>';
@@ -224,10 +231,21 @@ function renderCards(data) {
   // Place cards in the grid (grouped or sorted)
   renderPricesGrid();
 
-  // Update price and change labels on all cards
+  // Update price, change, and status on all cards
   data.forEach(inst => {
     const pEl = document.getElementById('p-' + inst.key);
     if (!pEl) return;
+
+    // Status dot (updated every refresh)
+    const sEl = document.getElementById('s-' + inst.key);
+    if (sEl) {
+      const st = inst.price_status || 'delayed';
+      sEl.className = 'price-status-dot status-' + st;
+      sEl.title = st === 'live'        ? 'Live data (real-time)'
+                : st === 'delayed'     ? '\u223015-min delayed'
+                : st === 'settlement'  ? 'Official daily rate'
+                : 'Data unavailable';
+    }
 
     if (!inst.price && inst.error) {
       const is429 = inst.error.toLowerCase().includes('429') || inst.error.toLowerCase().includes('too many');
@@ -838,9 +856,11 @@ function buildDriversModal() {
 }
 
 /* ── Commodity detail modal ────────────────────────────────────────────────── */
-let chart        = null;
-let currentKey   = null;
-let currentRange = '1mo';
+let chart         = null;
+let termChart     = null;
+let currentKey    = null;
+let currentRange  = '1mo';
+let currentChartTab = 'price';  // 'price' | 'term'
 
 async function openCommodityModal(key) {
   const inst = instruments.find(i => i.key === key);
@@ -854,6 +874,20 @@ async function openCommodityModal(key) {
   document.getElementById('m-name').textContent  = inst.label;
   document.getElementById('m-price').textContent = fmtPrice(inst);
 
+  // Contract label / price type subtitle
+  const clEl = document.getElementById('m-contract-label');
+  if (clEl) {
+    if (inst.contract_label) {
+      clEl.textContent = inst.contract_label;
+    } else if (inst.price_type === 'spot') {
+      clEl.textContent = 'Spot \u00b7 ' + (inst.price_status === 'live' ? 'Live' : 'Delayed');
+    } else if (inst.price_type === 'fx_spot') {
+      clEl.textContent = 'FX Spot \u00b7 Interbank';
+    } else {
+      clEl.textContent = '';
+    }
+  }
+
   const chg = _instChg(inst, currentRange);
   const chgEl = document.getElementById('m-chg');
   if (chg === null) {
@@ -865,6 +899,13 @@ async function openCommodityModal(key) {
     chgEl.textContent = '\u25bc ' + chg.toFixed(2) + '%';
     chgEl.className = 'modal-chg down';
   }
+
+  // Reset to Price tab on every open
+  _setChartTabUI('price');
+
+  // Show/hide Term Structure tab based on whether this instrument has a curve
+  const termTab = document.getElementById('chart-tab-term');
+  if (termTab) termTab.style.display = inst.curve_enabled ? '' : 'none';
 
   document.querySelectorAll('.range-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.range === currentRange);
@@ -915,8 +956,10 @@ async function changeRange(range) {
 function closeCommodityModal() {
   document.getElementById('overlay').classList.remove('open');
   document.body.style.overflow = '';
-  if (chart) { chart.destroy(); chart = null; }
+  if (chart)     { chart.destroy();     chart     = null; }
+  if (termChart) { termChart.destroy(); termChart = null; }
   currentKey = null;
+  _setChartTabUI('price');
 }
 document.getElementById('close-btn').addEventListener('click', closeCommodityModal);
 document.getElementById('overlay').addEventListener('click', e => {
@@ -925,6 +968,159 @@ document.getElementById('overlay').addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeBriefingModal(); closeCommodityModal(); closeFirmModal(); }
 });
+
+/* ── Chart tab switching ───────────────────────────────────────────────────── */
+function _setChartTabUI(tab) {
+  currentChartTab = tab;
+  document.querySelectorAll('.chart-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  const priceWrap = document.getElementById('price-chart-wrap');
+  const termWrap  = document.getElementById('term-chart-wrap');
+  const rangeWrap = document.getElementById('range-tabs-wrap');
+  if (priceWrap) priceWrap.style.display = tab === 'price' ? '' : 'none';
+  if (termWrap)  termWrap.style.display  = tab === 'term'  ? '' : 'none';
+  if (rangeWrap) rangeWrap.style.display = tab === 'price' ? '' : 'none';
+}
+
+function setChartTab(tab) {
+  if (tab === currentChartTab) return;
+  _setChartTabUI(tab);
+  if (tab === 'term') loadTermStructure(currentKey);
+}
+
+/* ── Term structure / forward curve ───────────────────────────────────────── */
+async function loadTermStructure(key) {
+  if (!key) return;
+  const tph = document.getElementById('term-ph');
+  const tcv = document.getElementById('term-chart');
+  const sumEl = document.getElementById('curve-summary');
+  if (!tph || !tcv) return;
+
+  if (termChart) { termChart.destroy(); termChart = null; }
+  tph.style.display = 'flex';
+  tph.innerHTML = '<span class="spin"></span>&nbsp;Loading curve\u2026';
+  tcv.style.display = 'none';
+  if (sumEl) sumEl.innerHTML = '';
+
+  try {
+    const res = await apiFetch('/api/curve/' + key);
+    if (!res || !res.ok) {
+      tph.innerHTML = '<span style="color:var(--red);font-size:0.8rem">Curve data unavailable.</span>';
+      return;
+    }
+    renderTermStructure(await res.json());
+  } catch(e) {
+    tph.innerHTML = '<span style="color:var(--red);font-size:0.8rem">Error loading curve.</span>';
+  }
+}
+
+function renderTermStructure(data) {
+  const tph   = document.getElementById('term-ph');
+  const tcv   = document.getElementById('term-chart');
+  const sumEl = document.getElementById('curve-summary');
+
+  const valid = (data.contracts || []).filter(c => c.price !== null);
+
+  if (valid.length < 2) {
+    tph.style.display = 'flex';
+    tph.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">' +
+      (data.error || 'Insufficient contract data for term structure.') + '</span>';
+    tcv.style.display = 'none';
+    return;
+  }
+
+  tph.style.display = 'none';
+  tcv.style.display = 'block';
+
+  const labels = valid.map(c => c.label);
+  const prices = valid.map(c => c.price);
+  const state  = data.curve_state || 'insufficient';
+
+  // Curve-state colour
+  const stateColor = state === 'backwardation' ? '#22c55e'
+                   : state === 'contango'       ? '#ef4444'
+                   : '#6b7f9e';
+
+  // Summary bar
+  if (sumEl) {
+    const stateLabel = state.charAt(0).toUpperCase() + state.slice(1);
+    let html = '<div class="curve-summary-bar">';
+    html += `<span class="curve-state-badge curve-state-${state}">${esc(stateLabel)}</span>`;
+    if (data.front_to_second) {
+      const s = data.front_to_second;
+      const sign = s.spread >= 0 ? '+' : '';
+      html += `<span class="curve-spread">F1\u2192F2: ${esc(data.prefix || '')}${sign}${s.spread.toFixed(data.decimals || 2)}${esc(data.suffix || '')} (${sign}${s.pct.toFixed(2)}%)</span>`;
+    }
+    if (data.front_to_sixth) {
+      const s = data.front_to_sixth;
+      const sign = s.spread >= 0 ? '+' : '';
+      html += `<span class="curve-spread">F1\u2192F6: ${esc(data.prefix || '')}${sign}${s.spread.toFixed(data.decimals || 2)}${esc(data.suffix || '')} (${sign}${s.pct.toFixed(2)}%)</span>`;
+    }
+    html += `<span class="curve-source">${esc(data.source || 'yfinance')} \u00b7 Delayed</span>`;
+    html += '</div>';
+    sumEl.innerHTML = html;
+  }
+
+  // Gradient fill
+  const ctx  = tcv.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 210);
+  grad.addColorStop(0, state === 'backwardation' ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  termChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: prices, borderColor: stateColor, borderWidth: 1.8,
+        backgroundColor: grad, fill: true, tension: 0.15,
+        pointRadius: 5, pointBackgroundColor: stateColor,
+        pointHoverRadius: 7, pointHoverBackgroundColor: stateColor,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#131e30',
+          borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1,
+          titleColor: '#6b7f9e', titleFont: { size: 11 },
+          bodyColor: '#dde8f8',  bodyFont: { size: 12, weight: '600' },
+          padding: 10, displayColors: false,
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y;
+              if (data.thousands)
+                return (data.prefix||'') + v.toLocaleString('en-US', { minimumFractionDigits: data.decimals, maximumFractionDigits: data.decimals }) + (data.suffix||'');
+              return (data.prefix||'') + v.toFixed(data.decimals || 2) + (data.suffix||'');
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid:   { color: 'rgba(255,255,255,0.04)' },
+          border: { color: 'rgba(255,255,255,0.06)' },
+          ticks:  { color: '#374d68', font: { size: 10 }, maxRotation: 30 }
+        },
+        y: {
+          position: 'right',
+          grid:   { color: 'rgba(255,255,255,0.04)' },
+          border: { color: 'rgba(255,255,255,0.06)' },
+          ticks: {
+            color: '#374d68', font: { size: 10 },
+            callback: v => {
+              if (data.thousands)
+                return (data.prefix||'') + v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+              return (data.prefix||'') + v.toFixed(Math.min(data.decimals || 2, 3));
+            }
+          }
+        }
+      }
+    }
+  });
+}
 
 /* ── Chart ─────────────────────────────────────────────────────────────────── */
 function resetChart() {

@@ -274,20 +274,33 @@
         <span class="modal-price" id="m-price">--</span>
         <span class="modal-chg"   id="m-chg"></span>
       </div>
+      <div class="modal-contract-label" id="m-contract-label"></div>
     </div>
 
     <div class="chart-section-header">
-      <span class="chart-section-label">Price History</span>
-      <div class="range-tabs">
+      <div class="chart-tabs" id="chart-tabs">
+        <button class="chart-tab active" id="chart-tab-price" data-tab="price" onclick="setChartTab('price')">Price</button>
+        <button class="chart-tab" id="chart-tab-term" data-tab="term" onclick="setChartTab('term')">Term Structure</button>
+      </div>
+      <div class="range-tabs" id="range-tabs-wrap">
         <button class="range-tab" data-range="1d"  onclick="changeRange('1d')">24H</button>
         <button class="range-tab" data-range="1w"  onclick="changeRange('1w')">1W</button>
         <button class="range-tab active" data-range="1mo" onclick="changeRange('1mo')">1M</button>
         <button class="range-tab" data-range="1y"  onclick="changeRange('1y')">1Y</button>
       </div>
     </div>
-    <div class="chart-wrap">
-      <div class="placeholder" id="chart-ph"><span class="spin"></span>Loading chart&hellip;</div>
-      <canvas id="price-chart"></canvas>
+    <div id="price-chart-wrap">
+      <div class="chart-wrap">
+        <div class="placeholder" id="chart-ph"><span class="spin"></span>Loading chart&hellip;</div>
+        <canvas id="price-chart"></canvas>
+      </div>
+    </div>
+    <div id="term-chart-wrap" style="display:none">
+      <div class="curve-summary" id="curve-summary"></div>
+      <div class="chart-wrap">
+        <div class="placeholder" id="term-ph"><span class="spin"></span>Loading curve&hellip;</div>
+        <canvas id="term-chart"></canvas>
+      </div>
     </div>
 
     <div class="articles-section">
